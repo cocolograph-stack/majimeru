@@ -1,0 +1,249 @@
+import maya.cmds as cmds
+import maya.mel as mel
+
+def close_win(win_name):
+    if cmds.window(win_name, exists=True):
+        cmds.deleteUI(win_name, window=True)
+
+# --- 選択アイテム（コンポーネント含む）から親のトランスフォームノードを自動取得する関数 ---
+def get_target_transforms():
+    sel = cmds.ls(selection=True, long=True)
+    if not sel:
+        return []
+    
+    objects = cmds.ls(selection=True, objectsOnly=True, long=True)
+    transforms = []
+    for obj in objects:
+        if cmds.nodeType(obj) == 'transform':
+            transforms.append(obj)
+        else:
+            p = cmds.listRelatives(obj, parent=True, fullPath=True, type='transform')
+            if p:
+                transforms.append(p[0])
+    
+    return list(set(transforms))
+
+# --- 各ツールの設定・実行ウィンドウ ---
+
+def open_extrude_dialog():
+    win = "extrudeOptWin"
+    close_win(win)
+    cmds.window(win, title="押し出し (Extrude) 設定", widthHeight=(750, 200), sizeable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=15, columnAttach=("both", 20))
+    cmds.text(label="", height=5)
+    
+    thick_field = cmds.floatSliderGrp(label="厚み (Thickness)", field=True, value=0.0, min=-5.0, max=5.0, precision=3, adjustableColumn=2, columnWidth3=(160, 100, 90))
+    div_field = cmds.intSliderGrp(label="分割数 (Divisions)", field=True, value=1, min=1, max=20, adjustableColumn=2, columnWidth3=(160, 100, 90))
+    
+    cmds.text(label="", height=5)
+    cmds.button(label="実行 (Apply)", bgc=[0.2, 0.5, 0.3], height=40,
+                command=lambda *args: (
+                    cmds.polyExtrudeFacet(
+                        thickness=cmds.floatSliderGrp(thick_field, query=True, value=True),
+                        divisions=cmds.intSliderGrp(div_field, query=True, value=True)
+                    ) if cmds.ls(selection=True) else cmds.warning("フェースを選択してください"),
+                    cmds.deleteUI(win, window=True)
+                ))
+    cmds.showWindow(win)
+
+def open_bevel_dialog():
+    win = "bevelOptWin"
+    close_win(win)
+    cmds.window(win, title="ベベル (Bevel) 設定", widthHeight=(750, 210), sizeable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=15, columnAttach=("both", 20))
+    cmds.text(label="", height=5)
+    
+    off_field = cmds.floatSliderGrp(label="オフセット (Offset)", field=True, value=0.2, min=0.01, max=5.0, precision=2, adjustableColumn=2, columnWidth3=(160, 100, 90))
+    seg_field = cmds.intSliderGrp(label="セグメント (Segments)", field=True, value=1, min=1, max=20, adjustableColumn=2, columnWidth3=(160, 100, 90))
+    
+    cmds.text(label="", height=5)
+    cmds.button(label="実行 (Apply)", bgc=[0.2, 0.5, 0.3], height=40,
+                command=lambda *args: (
+                    cmds.polyBevel(offset=cmds.floatSliderGrp(off_field, query=True, value=True),
+                                   segments=cmds.intSliderGrp(seg_field, query=True, value=True)) if cmds.ls(selection=True) else cmds.warning("エッジまたはフェースを選択してください"),
+                    cmds.deleteUI(win, window=True)
+                ))
+    cmds.showWindow(win)
+
+def open_bridge_dialog():
+    win = "bridgeOptWin"
+    close_win(win)
+    cmds.window(win, title="ブリッジ (Bridge) 設定", widthHeight=(750, 170), sizeable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=15, columnAttach=("both", 20))
+    cmds.text(label="", height=5)
+    
+    div_field = cmds.intSliderGrp(label="分割数 (Divisions)", field=True, value=0, min=0, max=20, adjustableColumn=2, columnWidth3=(160, 100, 90))
+    
+    cmds.text(label="", height=5)
+    cmds.button(label="実行 (Apply)", bgc=[0.2, 0.5, 0.3], height=40,
+                command=lambda *args: (
+                    cmds.polyBridgeEdge(divisions=cmds.intSliderGrp(div_field, query=True, value=True)) if cmds.ls(selection=True) else cmds.warning("エッジまたはフェースを選択してください"),
+                    cmds.deleteUI(win, window=True)
+                ))
+    cmds.showWindow(win)
+
+def open_merge_dialog():
+    win = "mergeOptWin"
+    close_win(win)
+    cmds.window(win, title="マージ (Merge) 設定", widthHeight=(750, 170), sizeable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=15, columnAttach=("both", 20))
+    cmds.text(label="", height=5)
+    
+    dist_field = cmds.floatSliderGrp(label="許容値 (Threshold)", field=True, value=0.001, min=0.0001, max=1.0, precision=4, adjustableColumn=2, columnWidth3=(160, 100, 90))
+    
+    cmds.text(label="", height=5)
+    cmds.button(label="実行 (Apply)", bgc=[0.2, 0.5, 0.3], height=40,
+                command=lambda *args: (
+                    cmds.polyMergeVertex(distance=cmds.floatSliderGrp(dist_field, query=True, value=True)) if cmds.ls(selection=True) else cmds.warning("頂点またはオブジェクトを選択してください"),
+                    cmds.deleteUI(win, window=True)
+                ))
+    cmds.showWindow(win)
+
+def open_merge_to_center_dialog():
+    win = "mergeCenterOptWin"
+    close_win(win)
+    cmds.window(win, title="センターへマージ 設定", widthHeight=(500, 130), sizeable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=12, columnAttach=("both", 20))
+    cmds.text(label="", height=5)
+    
+    cmds.text(label="選択した頂点を中心にマージします", align="center")
+    
+    cmds.text(label="", height=5)
+    cmds.button(label="実行 (Apply)", bgc=[0.2, 0.5, 0.3], height=38,
+                command=lambda *args: (
+                    mel.eval("polyMergeToCenter;") if cmds.ls(selection=True) else cmds.warning("頂点を選択してください"),
+                    cmds.deleteUI(win, window=True)
+                ))
+    cmds.showWindow(win)
+
+def open_mirror_dialog():
+    win = "mirrorOptWin"
+    close_win(win)
+    cmds.window(win, title="ミラー (Mirror) 設定", widthHeight=(450, 190), sizeable=True)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=15, columnAttach=("both", 20))
+    cmds.text(label="", height=5)
+    
+    axis_menu = cmds.optionMenuGrp(label="ミラー軸 (Axis)", columnWidth2=(130, 150))
+    cmds.menuItem(label="X")
+    cmds.menuItem(label="Y")
+    cmds.menuItem(label="Z")
+    cmds.optionMenuGrp(axis_menu, edit=True, select=1)
+    
+    merge_chk = cmds.checkBox(label="境界をマージする (Merge Borders)", value=True)
+    
+    cmds.text(label="", height=5)
+    def apply_mirror():
+        targets = get_target_transforms()
+        if targets:
+            axis_idx = cmds.optionMenuGrp(axis_menu, query=True, select=True) - 1 # 0:X, 1:Y, 2:Z
+            merge_val = cmds.checkBox(merge_chk, query=True, value=True)
+            cmds.select(targets, replace=True)
+            try:
+                cmds.polyMirrorFace(mirrorAxis=axis_idx, mergeMode=1 if merge_val else 0, ch=True)
+                print("ミラーを実行しました。")
+            except Exception as e:
+                cmds.warning(f"ミラーの実行に失敗しました: {e}")
+        else:
+            cmds.warning("オブジェクトを選択してください")
+        cmds.deleteUI(win, window=True)
+
+    cmds.button(label="実行 (Apply)", bgc=[0.3, 0.3, 0.5], height=38, command=lambda *args: apply_mirror())
+    cmds.showWindow(win)
+
+
+# --- ツール直接起動用関数 ---
+
+def do_insert_edge_loop():
+    mel.eval("InsertEdgeLoopTool;")
+
+def do_multi_cut():
+    mel.eval("dR_multiCutTool;")
+
+def do_target_weld():
+    mel.eval("dR_targetWeldTool;")
+
+def do_combine():
+    if len(cmds.ls(selection=True)) >= 2:
+        cmds.polyUnite(ch=True)
+        print("オブジェクトを結合しました。")
+    else:
+        cmds.warning("結合するには2つ以上のオブジェクトを選択してください")
+
+def do_fill_hole():
+    targets = get_target_transforms()
+    if targets:
+        cmds.select(targets, replace=True)
+        mel.eval("polyCloseBorder;")
+        print("穴を埋めました。")
+    else:
+        cmds.warning("オブジェクトまたはコンポーネントを選択してください")
+
+
+# --- ヒストリー削除・フリーズの直接実行関数 ---
+
+def do_history_delete():
+    targets = get_target_transforms()
+    if targets:
+        cmds.select(targets, replace=True)
+        mel.eval("delete -ch;")
+        cmds.select(targets, replace=True)
+        print("ヒストリーを削除しました。")
+    else:
+        cmds.warning("オブジェクトまたはコンポーネントを選択してください")
+
+def do_freeze_transforms():
+    targets = get_target_transforms()
+    if targets:
+        cmds.select(targets, replace=True)
+        mel.eval("makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 -pn 1;")
+        cmds.select(targets, replace=True)
+        print("トランスフォームをフリーズしました。")
+    else:
+        cmds.warning("オブジェクトまたはコンポーネントを選択してください")
+
+
+# --- メインのツールボックスウィンドウ ---
+def create_modeling_toolbox():
+    window_name = "customModelingToolbox5"
+    close_win(window_name)
+        
+    window = cmds.window(window_name, title="モデリングツール", widthHeight=(260, 640), sizeable=True)
+    
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=5, columnAttach=("both", 10))
+    
+    cmds.text(label="", height=5)
+    cmds.text(label="モデリング操作", align="center", font="boldLabelFont")
+    cmds.separator(height=10, style="in")
+    
+    cmds.button(label="1. 押し出し (Extrude) ...", bgc=[0.2, 0.5, 0.3], height=32, command=lambda *args: open_extrude_dialog())
+    cmds.button(label="2. ベベル (Bevel) ...", bgc=[0.2, 0.5, 0.3], height=32, command=lambda *args: open_bevel_dialog())
+    cmds.button(label="3. ブリッジ (Bridge) ...", bgc=[0.2, 0.5, 0.3], height=32, command=lambda *args: open_bridge_dialog())
+    cmds.button(label="4. マージ (Merge) ...", bgc=[0.2, 0.5, 0.3], height=32, command=lambda *args: open_merge_dialog())
+    cmds.button(label="5. センターへマージ ...", bgc=[0.2, 0.5, 0.3], height=32, command=lambda *args: open_merge_to_center_dialog())
+    
+    cmds.separator(height=10, style="in")
+    cmds.text(label="メッシュツール", align="center", font="boldLabelFont")
+    cmds.separator(height=8, style="in")
+    
+    cmds.button(label="6. エッジループを挿入", bgc=[0.4, 0.4, 0.2], height=32, command=lambda *args: do_insert_edge_loop())
+    cmds.button(label="7. マルチカット", bgc=[0.4, 0.4, 0.2], height=32, command=lambda *args: do_multi_cut())
+    cmds.button(label="8. ターゲット連結", bgc=[0.4, 0.4, 0.2], height=32, command=lambda *args: do_target_weld())
+    
+    cmds.separator(height=10, style="in")
+    cmds.text(label="メッシュ編集", align="center", font="boldLabelFont")
+    cmds.separator(height=8, style="in")
+    
+    cmds.button(label="9. 結合 (Combine)", bgc=[0.3, 0.3, 0.5], height=32, command=lambda *args: do_combine())
+    cmds.button(label="10. 穴を埋める (Fill Hole)", bgc=[0.3, 0.3, 0.5], height=32, command=lambda *args: do_fill_hole())
+    cmds.button(label="11. ミラー (Mirror) ...", bgc=[0.3, 0.3, 0.5], height=32, command=lambda *args: open_mirror_dialog())
+    
+    cmds.separator(height=12, style="in")
+    cmds.text(label="ユーティリティ", align="center", font="boldLabelFont")
+    cmds.separator(height=10, style="in")
+    
+    cmds.button(label="12. ヒストリー削除", bgc=[0.3, 0.4, 0.5], height=32, command=lambda *args: do_history_delete())
+    cmds.button(label="13. トランスフォームフリーズ", bgc=[0.3, 0.4, 0.5], height=32, command=lambda *args: do_freeze_transforms())
+                
+    cmds.showWindow(window)
+
+create_modeling_toolbox()

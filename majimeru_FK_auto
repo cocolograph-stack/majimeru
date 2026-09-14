@@ -1,0 +1,137 @@
+import maya.cmds as cmds
+
+def makeFKTR(*args):
+    selection = cmds.ls(sl=True)
+    size = len(selection)
+    
+    if size == 0:
+        cmds.error("Please select one or more objects to control.")
+        
+    if size == 1:
+        descendants = cmds.listRelatives(selection[0], allDescendents=True, fullPath=False)
+        if descendants:
+            descendants.reverse()
+            selection = selection + descendants
+        size = len(selection)
+        
+    controlSize = cmds.floatSliderGrp("controlSize", q=True, v=True)
+    controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+    controlSuff = cmds.textFieldGrp("controlName", q=True, text=True)
+    
+    # UIのカラー選択スライダーからRGB値（0.0〜1.0）を取得
+    rgbColor = cmds.colorSliderGrp("controlColorRGB", q=True, rgb=True)
+
+    for i in range(size):
+        full_name = controlPref + selection[i] + controlSuff
+        if cmds.objExists(full_name):
+            cmds.error("Please enter a unique name combination.")
+            
+    for i in range(size):
+        cube = cmds.curve(d=1, p=[
+            (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5),
+            (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5),
+            (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5),
+            (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5)
+        ])
+        cubeShape = cmds.pickWalk(d="down")
+        
+        # 取得した任意のRGBカラーを適用
+        cmds.setAttr(cubeShape[0] + ".overrideEnabled", 1)
+        cmds.setAttr(cubeShape[0] + ".overrideRGBColors", 1)
+        cmds.setAttr(cubeShape[0] + ".overrideColorRGB", rgbColor[0], rgbColor[1], rgbColor[2])
+        
+        ctrl_name = cmds.rename(cube, controlPref + selection[i] + controlSuff)
+        cmds.select(ctrl_name)
+        cmds.scale(controlSize, controlSize, controlSize, r=True)
+        cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
+        
+        offset_name = cmds.group(em=True, n=controlPref + selection[i] + "_offset")
+        temp_orient = cmds.orientConstraint(selection[i], offset_name)
+        cmds.delete(temp_orient)
+        temp_point = cmds.pointConstraint(selection[i], offset_name)
+        cmds.delete(temp_point)
+
+        cmds.parent(ctrl_name, offset_name)
+        
+        if i >= 1:
+            cmds.parent(offset_name, controlPref + selection[i-1] + controlSuff)
+        
+        for attr in [".tx", ".ty", ".tz", ".rx", ".ry", ".rz"]:
+            cmds.setAttr(ctrl_name + attr, 0)
+            
+        cmds.parentConstraint(ctrl_name, selection[i], mo=True)
+        
+    selectionParent = "noParent"
+    for i in range(size):
+        parent = cmds.listRelatives(selection[i], parent=True)
+        if parent and len(parent) > 0:
+            parentCheck = parent[0]
+            if parentCheck not in selection:
+                selectionParent = parentCheck
+                
+    if selectionParent != "noParent":
+        cmds.parentConstraint(selectionParent, controlPref + selection[0] + "_offset", mo=True)
+
+def createFKControls():
+    if cmds.window("majimeru_FK_auto", exists=True):
+        cmds.deleteUI("majimeru_FK_auto")
+
+    sel = cmds.ls(sl=True)
+    
+    cmds.window("majimeru_FK_auto", title="majimeru_FK_auto", widthHeight=(400, 310))
+    cmds.columnLayout(adj=True, rowSpacing=15, columnOffset=('both', 15))
+    
+    cmds.separator(style='none', height=5)
+    
+    cmds.floatSliderGrp(
+        "controlSize",
+        label="Control Size",
+        field=True,
+        cw3=(90, 50, 180),
+        minValue=0.01,
+        maxValue=50.0,
+        fieldMinValue=0.1,
+        fieldMaxValue=50,
+        value=1
+    )
+    
+    # 任意のカラーを選択できるカラーピッカーを追加（初期値は先ほどの空色）
+    cmds.colorSliderGrp(
+        "controlColorRGB",
+        label="Control Color",
+        cw2=(90, 50),
+        rgb=(0.3, 0.7, 1.0)
+    )
+    
+    cmds.textFieldGrp(
+        "controlPrefix",
+        label="Control Prefix",
+        cw2=(90, 220),
+        text=""
+    )
+    
+    cmds.textFieldGrp(
+        "controlName",
+        label="Control Suffix",
+        cw2=(90, 220),
+        text="_CTRL"
+    )
+    
+    cmds.separator(style='none', height=5)
+    
+    cmds.button(
+        label="コントローラを作る",
+        height=40,
+        bgc=[1.0, 0.85, 0.0],
+        command=makeFKTR
+    )
+    
+    cmds.separator(style='none', height=5)
+    
+    originalSelection = cmds.ls(sl=True)
+    if originalSelection:
+        cmds.select(originalSelection)
+    
+    cmds.showWindow("majimeru_FK_auto")
+
+createFKControls()

@@ -1,0 +1,257 @@
+import maya.cmds as cmds
+import maya.OpenMayaUI as omui
+
+try:
+  from PySide6 import QtCore, QtGui, QtWidgets
+  from shiboken6 import wrapInstance
+except ImportError:
+  from PySide2 import QtCore, QtGui, QtWidgets
+  from shiboken2 import wrapInstance
+
+
+def get_maya_window():
+  ptr = omui.MQtUtil.mainWindow()
+  if ptr is not None:
+    return wrapInstance(int(ptr), QtWidgets.QWidget)
+  return None
+
+
+# キー移動と自動タンジェント最適化
+def shift_selected_keys(time_offset, value_offset):
+  curves = cmds.keyframe(q=True, sl=True, name=True)
+  if not curves:
+    return
+
+  curves = list(set(curves))
+  for curve in curves:
+    times = cmds.keyframe(curve, q=True, sl=True, tc=True)
+    if not times:
+      continue
+
+    sorted_times = sorted(times, reverse=(time_offset > 0))
+
+    for t in sorted_times:
+      current_vals = cmds.keyframe(
+          curve, time=(t, t), q=True, valueChange=True
+      )
+      if not current_vals:
+        continue
+      v = current_vals[0]
+
+      new_t = t + time_offset
+      new_v = v + value_offset
+
+      if time_offset != 0:
+        cmds.keyframe(
+            curve, time=(t, t), edit=True, timeChange=new_t, absolute=True
+        )
+
+      if value_offset != 0:
+        target_t = new_t if time_offset != 0 else t
+        cmds.keyframe(
+            curve,
+            time=(target_t, target_t),
+            edit=True,
+            valueChange=new_v,
+            absolute=True,
+        )
+
+      final_t = new_t if time_offset != 0 else t
+      cmds.keyTangent(curve, time=(final_t, final_t), itt='auto', ott='auto')
+
+
+def scale_selected_keys(factor):
+  curves = cmds.keyframe(q=True, sl=True, name=True)
+  if not curves:
+    return
+
+  curves = list(set(curves))
+  for curve in curves:
+    times = cmds.keyframe(curve, q=True, sl=True, tc=True)
+    if not times or len(times) < 2:
+      continue
+
+    base_time = times[0]
+    sorted_times = sorted(times, reverse=(factor > 1.0))
+
+    for t in sorted_times:
+      if t == base_time:
+        continue
+      diff = t - base_time
+      new_time = base_time + (diff * factor)
+      new_time = round(new_time)
+
+      cmds.keyframe(
+          curve, time=(t, t), edit=True, timeChange=new_time, absolute=True
+      )
+      cmds.keyTangent(curve, time=(new_time, new_time), itt='auto', ott='auto')
+
+
+# ★ 選択中のキーをブレイクダウンキーに確実に変換する処理
+def convert_to_breakdown():
+  curves = cmds.keyframe(q=True, sl=True, name=True)
+  if not curves:
+    cmds.warning(
+        'グラフエディタ上でブレイクダウンに変換したいキーを選択してください。'
+    )
+    return
+
+  curves = list(set(curves))
+  count = 0
+
+  for curve in curves:
+    times = cmds.keyframe(curve, q=True, sl=True, tc=True)
+    if not times:
+      continue
+
+    for t in times:
+      # keyframeコマンドで直接ブレイクダウン属性（True）を書き込む
+      cmds.keyframe(
+          curve, time=(t, t), edit=True, breakdown=True
+      )
+      count += 1
+
+  print(
+      f'選択されたキー ({count}個) をブレイクダウンキーに変換しました。'
+  )
+
+
+# 押し続け対応のボタンクラス
+class HoldButton(QtWidgets.QPushButton):
+
+  def __init__(self, text, callback, parent=None):
+    super(HoldButton, self).__init__(text, parent)
+    self.callback = callback
+    self.timer = QtCore.QTimer(self)
+    self.timer.setInterval(70)
+    self.timer.timeout.connect(self.callback)
+
+  def mousePressEvent(self, event):
+    super(HoldButton, self).mousePressEvent(event)
+    self.callback()
+    self.timer.start()
+
+  def mouseReleaseEvent(self, event):
+    super(HoldButton, self).mouseReleaseEvent(event)
+    self.timer.stop()
+
+
+class AnimAdjustUI(QtWidgets.QDialog):
+
+  def __init__(self, parent=None):
+    super(AnimAdjustUI, self).__init__(parent)
+    self.setWindowTitle('Anim Pro Adjuster')
+    self.setMinimumWidth(260)
+    self.init_ui()
+
+  def init_ui(self):
+    layout = QtWidgets.QVBoxLayout(self)
+
+    btn_style = (
+        'QPushButton { background-color: #4a5d73; color: white;'
+        ' font-weight: bold; padding: 6px; border-radius: 12px; }'
+        'QPushButton:hover { background-color: #5a6d83; }'
+    )
+
+    scale_btn_style = (
+        'QPushButton { background-color: #5a4a63; color: white;'
+        ' font-weight: bold; padding: 6px; border-radius: 12px; }'
+        'QPushButton:hover { background-color: #6a5a73; }'
+    )
+
+    bd_btn_style = (
+        'QPushButton { background-color: #3d6852; color: white;'
+        ' font-weight: bold; padding: 6px; border-radius: 12px; }'
+        'QPushButton:hover { background-color: #4c7d63; }'
+    )
+
+    # ブレイクダウン変換セクション
+    layout.addWidget(QtWidgets.QLabel('<b>【 キーの属性変換 】</b>'))
+    b_breakdown = QtWidgets.QPushButton('🟢 ブレイクダウンに変換 (Breakdown)')
+    b_breakdown.setStyleSheet(bd_btn_style)
+    b_breakdown.clicked.connect(convert_to_breakdown)
+    layout.addWidget(b_breakdown)
+
+    l0 = QtWidgets.QFrame()
+    l0.setFrameShape(QtWidgets.QFrame.HLine)
+    l0.setFrameShadow(QtWidgets.QFrame.Sunken)
+    layout.addWidget(l0)
+
+    # 1. 上下移動セクション (+1, +5, +10)
+    layout.addWidget(
+        QtWidgets.QLabel('<b>【 上下移動 (長押しで連続変化) 】</b>')
+    )
+    grid_val = QtWidgets.QGridLayout()
+
+    # ±1
+    b_up1 = HoldButton('▲ +1', lambda: shift_selected_keys(0, 1.0), self)
+    b_dn1 = HoldButton('▼ -1', lambda: shift_selected_keys(0, -1.0), self)
+    b_up1.setStyleSheet(btn_style)
+    b_dn1.setStyleSheet(btn_style)
+    grid_val.addWidget(b_up1, 0, 0)
+    grid_val.addWidget(b_dn1, 0, 1)
+
+    # ±5
+    b_up5 = HoldButton('▲ +5', lambda: shift_selected_keys(0, 5.0), self)
+    b_dn5 = HoldButton('▼ -5', lambda: shift_selected_keys(0, -5.0), self)
+    b_up5.setStyleSheet(btn_style)
+    b_dn5.setStyleSheet(btn_style)
+    grid_val.addWidget(b_up5, 1, 0)
+    grid_val.addWidget(b_dn5, 1, 1)
+
+    # ±10
+    b_up10 = HoldButton('▲ +10', lambda: shift_selected_keys(0, 10.0), self)
+    b_dn10 = HoldButton('▼ -10', lambda: shift_selected_keys(0, -10.0), self)
+    b_up10.setStyleSheet(btn_style)
+    b_dn10.setStyleSheet(btn_style)
+    grid_val.addWidget(b_up10, 2, 0)
+    grid_val.addWidget(b_dn10, 2, 1)
+
+    layout.addLayout(grid_val)
+
+    l1 = QtWidgets.QFrame()
+    l1.setFrameShape(QtWidgets.QFrame.HLine)
+    l1.setFrameShadow(QtWidgets.QFrame.Sunken)
+    layout.addWidget(l1)
+
+    # 2. 左右移動セクション
+    layout.addWidget(
+        QtWidgets.QLabel('<b>【 左右移動 (フレーム単位) 】</b>')
+    )
+    grid_time = QtWidgets.QGridLayout()
+    b_t_left = HoldButton('<< -1 F', lambda: shift_selected_keys(-1, 0), self)
+    b_t_right = HoldButton('+1 F >>', lambda: shift_selected_keys(1, 0), self)
+    b_t_left.setStyleSheet(btn_style)
+    b_t_right.setStyleSheet(btn_style)
+    grid_time.addWidget(b_t_left, 0, 0)
+    grid_time.addWidget(b_t_right, 0, 1)
+    layout.addLayout(grid_time)
+
+    l2 = QtWidgets.QFrame()
+    l2.setFrameShape(QtWidgets.QFrame.HLine)
+    l2.setFrameShadow(QtWidgets.QFrame.Sunken)
+    layout.addWidget(l2)
+
+    # 3. 間隔の伸縮
+    layout.addWidget(QtWidgets.QLabel('<b>【 キーの間隔詰め・広げ 】</b>'))
+    grid_scale = QtWidgets.QGridLayout()
+    b_s_in = QtWidgets.QPushButton('キュッと詰める (x0.8)')
+    b_s_out = QtWidgets.QPushButton('グッと広げる (x1.2)')
+    b_s_in.setStyleSheet(scale_btn_style)
+    b_s_out.setStyleSheet(scale_btn_style)
+    b_s_in.clicked.connect(lambda: scale_selected_keys(0.8))
+    b_s_out.clicked.connect(lambda: scale_selected_keys(1.2))
+    grid_scale.addWidget(b_s_in, 0, 0)
+    grid_scale.addWidget(b_s_out, 0, 1)
+    layout.addLayout(grid_scale)
+
+
+try:
+  anim_ui_win.close()
+  anim_ui_win.deleteLater()
+except:
+  pass
+
+parent = get_maya_window()
+anim_ui_win = AnimAdjustUI(parent)
+anim_ui_win.show()

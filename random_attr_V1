@@ -1,0 +1,162 @@
+import random
+import maya.cmds as cmds
+
+
+def update_attribute_menu(*args):
+  selection = cmds.ls(sl=True)
+  if not selection:
+    cmds.warning(
+        'オブジェクトが選択されていません。対象を1つ以上選択してください。'
+    )
+    return
+
+  # 選択されたオブジェクト、およびそのシェイプ（ライトなど）を取得
+  target = selection[0]
+  targets = [target]
+  shapes = cmds.listRelatives(target, shapes=True, fullPath=True)
+  if shapes:
+    targets.extend(shapes)
+
+  all_attrs = []
+  for t in targets:
+    # 接続されているものも含めて、数値・整数・角度などのアトリビュートを全取得
+    attrs = cmds.listAttr(t, scalar=True) or []
+    for attr in attrs:
+      # フルパスを避けてアトリビュート名のみ、かつ重複なしで追加
+      if attr not in all_attrs:
+        # 読み取り専用やメッセージリンクなどをざっくり除外するための簡易チェック
+        full_attr = f'{t}.{attr}'
+        try:
+          # 実際に数値として取得・設定できるかテスト
+          if cmds.getAttr(full_attr, type=True) in [
+              'float',
+              'double',
+              'doubleAngle',
+              'doubleLinear',
+              'long',
+              'short',
+              'byte',
+          ]:
+            all_attrs.append(attr)
+        except Exception:
+          pass
+
+  all_attrs = sorted(list(set(all_attrs)))
+
+  # プルダウンの既存項目をクリア
+  menu_items = cmds.optionMenu(attr_menu, query=True, ill=True)
+  if menu_items:
+    cmds.deleteUI(menu_items)
+
+  # プルダウンに再登録
+  if all_attrs:
+    for attr in all_attrs:
+      cmds.menuItem(label=attr, parent=attr_menu)
+    print(
+        f'成功: 「{target}」およびシェイプから {len(all_attrs)} 個のアトリビュートを読み込みました（Arnold含む）。'
+    )
+  else:
+    cmds.menuItem(label='取得できるアトリビュートがありません', parent=attr_menu)
+
+
+def randomize_attribute(*args):
+  attr_name = cmds.optionMenu(attr_menu, query=True, value=True)
+  if attr_name == '取得できるアトリビュートがありません' or not attr_name:
+    cmds.warning(
+        '有効なアトリビュートが選択されていません。「選択からアトリビュートを取得」を先に押してください。'
+    )
+    return
+
+  min_val = cmds.floatFieldGrp(min_field, query=True, value1=True)
+  max_val = cmds.floatFieldGrp(max_field, query=True, value1=True)
+
+  selection = cmds.ls(sl=True)
+  if not selection:
+    cmds.warning(
+        'オブジェクトが選択されていません。対象を選択してから実行してください。'
+    )
+    return
+
+  success_count = 0
+  for obj in selection:
+    targets = [obj]
+    shapes = cmds.listRelatives(obj, shapes=True, fullPath=True)
+    if shapes:
+      targets.extend(shapes)
+
+    attr_found = False
+    for target in targets:
+      full_attr = f'{target}.{attr_name}'
+      if cmds.objExists(full_attr):
+        try:
+          # ロックされていないか確認して設定
+          if not cmds.getAttr(full_attr, lock=True):
+            val = random.uniform(min_val, max_val)
+            cmds.setAttr(full_attr, val)
+            attr_found = True
+        except Exception:
+          pass
+
+    if attr_found:
+      success_count += 1
+
+  print(
+      f'完了: {success_count} 個の対象でアトリビュート「{attr_name}」を'
+      f' [{min_val} 〜 {max_val}] の間でランダム化しました。'
+  )
+
+
+# 既存のウィンドウがあれば閉じる
+window_name = 'randomAttrToolWindow'
+if cmds.window(window_name, exists=True):
+  cmds.deleteUI(window_name)
+
+# UIの構築
+win = cmds.window(
+    window_name,
+    title='アトリビュート一括ランダム化ツール（Arnold対応版）',
+    widthHeight=(340, 230),
+    resizeToFitChildren=True,
+)
+cmds.columnLayout(
+    adjustableColumn=True, rowSpacing=10, columnAttach=('both', 12)
+)
+
+cmds.text(
+    label='1. Arnoldライトなどを選択して「アトリビュートを取得」\n2.'
+    ' `aiExposure` などを選んで実行！',
+    align='left',
+)
+
+# アトリビュート取得ボタン
+cmds.button(
+    label='👇 選択したオブジェクトからアトリビュートを読み込む',
+    backgroundColor=[0.4, 0.4, 0.4],
+    height=28,
+    command=update_attribute_menu,
+)
+
+# プルダウンメニュー
+cmds.rowLayout(
+    numberOfColumns=2, columnWidth2=(110, 180), columnAttach=[(1, 'right', 5)]
+)
+cmds.text(label='アトリビュート名:')
+attr_menu = cmds.optionMenu(width=180)
+cmds.menuItem(label='(ここに自動でリストが入ります)')
+cmds.setParent('..')
+
+min_field = cmds.floatFieldGrp(
+    label='最小値 (Min)', value1=1.0, columnWidth=[(1, 110), (2, 180)]
+)
+max_field = cmds.floatFieldGrp(
+    label='最大値 (Max)', value1=20.0, columnWidth=[(1, 110), (2, 180)]
+)
+
+cmds.button(
+    label='ランダム化を実行！',
+    backgroundColor=[0.2, 0.5, 0.8],
+    height=35,
+    command=randomize_attribute,
+)
+
+cmds.showWindow(win)

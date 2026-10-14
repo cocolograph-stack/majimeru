@@ -1,0 +1,281 @@
+import maya.cmds as cmds
+
+def multi_attr_manager_ui():
+    window_name = "multiAttrManagerWindow"
+    if cmds.window(window_name, exists=True):
+        cmds.deleteUI(window_name, window=True)
+        
+    # ウィンドウの高さを少し広げてレイアウトをゆったりさせました
+    window = cmds.window(window_name, title="アトリビュート管理＆連携ツール", widthHeight=(440, 680), sizeable=True)
+    
+    main_layout = cmds.columnLayout(adjustableColumn=True, rowSpacing=10, columnOffset=("both", 10))
+    
+    # タブレイアウトの作成
+    tabs = cmds.tabLayout(innerMarginWidth=5, innerMarginHeight=5)
+    
+    # ----------------------------------------------------
+    # タブ1: 追加
+    # ----------------------------------------------------
+    add_layout = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    cmds.text(label="", height=5)
+    cmds.text(label="追加するアトリビュート名（改行・カンマ区切り）:", align="left")
+    add_field = cmds.scrollField(text="", wordWrap=True, height=70)
+    
+    cmds.separator(height=10, style="in")
+    
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(110, 200), columnAlign=(1, "right"), columnAttach=[(1, "right", 5), (2, "left", 0)])
+    cmds.text(label="アトリビュートタイプ:")
+    type_menu = cmds.optionMenu()
+    cmds.menuItem(label="float")
+    cmds.menuItem(label="integer")
+    cmds.menuItem(label="bool")
+    cmds.menuItem(label="string")
+    cmds.menuItem(label="vector")
+    cmds.setParent("..")
+    
+    cmds.separator(height=10, style="in")
+    
+    def add_attrs(*args):
+        raw_text = cmds.scrollField(add_field, query=True, text=True)
+        names = [p.strip() for line in raw_text.splitlines() for p in line.split(',') if p.strip()]
+        if not names:
+            cmds.warning("アトリビュート名が入力されていません。")
+            return
+            
+        attr_type = cmds.optionMenu(type_menu, query=True, value=True)
+        selection = cmds.ls(sl=True)
+        
+        if not selection:
+            cmds.warning("オブジェクトが選択されていません。")
+            return
+            
+        for obj in selection:
+            for name in names:
+                try:
+                    if attr_type == "float":
+                        cmds.addAttr(obj, longName=name, attributeType="float", keyable=True)
+                    elif attr_type == "integer":
+                        cmds.addAttr(obj, longName=name, attributeType="long", keyable=True)
+                    elif attr_type == "bool":
+                        cmds.addAttr(obj, longName=name, attributeType="bool", keyable=True)
+                    elif attr_type == "string":
+                        cmds.addAttr(obj, longName=name, dataType="string")
+                    elif attr_type == "vector":
+                        cmds.addAttr(obj, longName=name, attributeType="float3", keyable=True)
+                        cmds.addAttr(obj, longName=name + "X", attributeType="float", parent=name, keyable=True)
+                        cmds.addAttr(obj, longName=name + "Y", attributeType="float", parent=name, keyable=True)
+                        cmds.addAttr(obj, longName=name + "Z", attributeType="float", parent=name, keyable=True)
+                    print(f"追加成功: '{obj}' -> '{name}'")
+                except Exception as e:
+                    print(f"追加エラー: '{obj}' -> '{name}': {e}")
+                    
+        cmds.confirmDialog(title="完了", message=f"{len(selection)}個のオブジェクトに {len(names)}個のアトリビュートを追加しました。", button=["OK"])
+
+    cmds.button(label="選択オブジェクトに追加", height=32, command=add_attrs, backgroundColor=[0.3, 0.5, 0.3])
+    cmds.setParent("..")
+    
+    # ----------------------------------------------------
+    # タブ2: 削除
+    # ----------------------------------------------------
+    del_layout = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    cmds.text(label="", height=5)
+    cmds.text(label="削除するアトリビュート名（改行・カンマ区切り）:", align="left")
+    del_field = cmds.scrollField(text="", wordWrap=True, height=90)
+    
+    cmds.separator(height=10, style="in")
+    
+    def delete_attrs(*args):
+        raw_text = cmds.scrollField(del_field, query=True, text=True)
+        names = [p.strip() for line in raw_text.splitlines() for p in line.split(',') if p.strip()]
+        if not names:
+            cmds.warning("削除するアトリビュート名が入力されていません。")
+            return
+            
+        selection = cmds.ls(sl=True)
+        if not selection:
+            cmds.warning("オブジェクトが選択されていません。")
+            return
+            
+        success_count = 0
+        for obj in selection:
+            for name in names:
+                try:
+                    if cmds.attributeQuery(name, node=obj, exists=True):
+                        cmds.deleteAttr(f"{obj}.{name}")
+                        print(f"削除成功: '{obj}' -> '{name}'")
+                        success_count += 1
+                    else:
+                        print(f"スキップ (存在しません): '{obj}' -> '{name}'")
+                except Exception as e:
+                    print(f"削除エラー: '{obj}' -> '{name}': {e}")
+                    
+        cmds.confirmDialog(title="完了", message=f"処理が完了しました（削除成功件数: {success_count}件）。", button=["OK"])
+
+    cmds.button(label="選択オブジェクトから削除", height=32, command=delete_attrs, backgroundColor=[0.6, 0.3, 0.3])
+    cmds.setParent("..")
+    
+    # ----------------------------------------------------
+    # タブ3: エクスプレッション連携
+    # ----------------------------------------------------
+    expr_layout = cmds.columnLayout(adjustableColumn=True, rowSpacing=4)
+    cmds.text(label="", height=2)
+    
+    # --- 1. 駆動元（Driver）設定 ---
+    cmds.text(label="■ 駆動元オブジェクト (Driver / 動かす側):", align="left")
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 100), columnAttach=[(1, "both", 0), (2, "both", 2)])
+    driver_field = cmds.textField(text="")
+    
+    def update_driver_attr_list(*args):
+        target = cmds.textField(driver_field, query=True, text=True).strip()
+        if not target or not cmds.objExists(target):
+            cmds.warning("有効な駆動元オブジェクトが指定されていません。")
+            return
+        all_attrs = cmds.listAttr(target, keyable=True, unlocked=True)
+        cmds.textScrollList(driver_attr_list, edit=True, removeAll=True)
+        if all_attrs:
+            cmds.textScrollList(driver_attr_list, edit=True, append=sorted(list(set(all_attrs))))
+
+    def set_driver(*args):
+        sel = cmds.ls(sl=True)
+        if sel:
+            cmds.textField(driver_field, edit=True, text=sel[0])
+            update_driver_attr_list()
+        else:
+            cmds.warning("オブジェクトを選択してください。")
+            
+    cmds.button(label="選択から設定", command=set_driver)
+    cmds.setParent("..")
+    
+    # 駆動元アトリビュートリスト
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 100), columnAttach=[(1, "both", 0), (2, "both", 2)])
+    cmds.text(label="【駆動元のアトリビュート選択】", align="left")
+    cmds.button(label="リスト更新", command=update_driver_attr_list)
+    cmds.setParent("..")
+    driver_attr_list = cmds.textScrollList(numberOfRows=4, allowMultiSelection=False, height=70)
+    
+    cmds.separator(height=6, style="in")
+    
+    # --- 2. 駆動先（Driven）設定 ---
+    cmds.text(label="■ 駆動先オブジェクト (Driven / 連動する側):", align="left")
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 100), columnAttach=[(1, "both", 0), (2, "both", 2)])
+    driven_field = cmds.textField(text="")
+    
+    def update_driven_attr_list(*args):
+        # 複数ある場合は最初のオブジェクトを基準にリストを表示する
+        target_text = cmds.textField(driven_field, query=True, text=True).strip()
+        if not target_text:
+            cmds.warning("有効な駆動先オブジェクトが指定されていません。")
+            return
+        target_list = [p.strip() for p in target_text.replace(",", " ").split() if p.strip()]
+        target = target_list[0]
+        
+        if not cmds.objExists(target):
+            cmds.warning(f"オブジェクト '{target}' が存在しません。")
+            return
+            
+        all_attrs = cmds.listAttr(target, keyable=True, unlocked=True)
+        cmds.textScrollList(driven_attr_list, edit=True, removeAll=True)
+        if all_attrs:
+            cmds.textScrollList(driven_attr_list, edit=True, append=sorted(list(set(all_attrs))))
+
+    def set_driven(*args):
+        sel = cmds.ls(sl=True)
+        if sel:
+            cmds.textField(driven_field, edit=True, text=", ".join(sel))
+            update_driven_attr_list()
+        else:
+            cmds.warning("オブジェクトを選択してください。")
+            
+    cmds.button(label="選択から設定", command=set_driven)
+    cmds.setParent("..")
+    
+    # 駆動先アトリビュートリスト
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 100), columnAttach=[(1, "both", 0), (2, "both", 2)])
+    cmds.text(label="【駆動先のアトリビュート選択】", align="left")
+    cmds.button(label="リスト更新", command=update_driven_attr_list)
+    cmds.setParent("..")
+    driven_attr_list = cmds.textScrollList(numberOfRows=4, allowMultiSelection=False, height=70)
+    
+    # --- 3. 計算式設定 ---
+    cmds.separator(height=6, style="in")
+    cmds.text(label="■ 変化させる計算式（例: driver * 2,  driver + 10 など）:", align="left")
+    expr_formula_field = cmds.textField(text="driver") # デフォルトはそのまま代入
+    
+    cmds.separator(height=8, style="in")
+    
+    def link_attributes_with_formula(*args):
+        driver = cmds.textField(driver_field, query=True, text=True).strip()
+        driven_text = cmds.textField(driven_field, query=True, text=True).strip()
+        formula = cmds.textField(expr_formula_field, query=True, text=True).strip()
+        
+        if not driver:
+            cmds.warning("駆動元オブジェクトが指定されていません。")
+            return
+            
+        if not driven_text:
+            cmds.warning("駆動先オブジェクトが指定されていません。")
+            return
+            
+        # 選択されているアトリビュートを取得
+        sel_driver_attr = cmds.textScrollList(driver_attr_list, query=True, selectItem=True)
+        sel_driven_attr = cmds.textScrollList(driven_attr_list, query=True, selectItem=True)
+        
+        if not sel_driver_attr:
+            cmds.warning("駆動元のアトリビュートがリストから選択されていません。")
+            return
+            
+        if not sel_driven_attr:
+            cmds.warning("駆動先のアトリビュートがリストから選択されていません。")
+            return
+            
+        driver_attr = sel_driver_attr[0]
+        driven_attr = sel_driven_attr[0]
+        
+        driven_list = [p.strip() for p in driven_text.replace(",", " ").split() if p.strip()]
+        
+        expr_lines = []
+        skipped_objs = []
+        
+        for driven in driven_list:
+            if cmds.objExists(f"{driven}.{driven_attr}"):
+                driver_full = f"{driver}.{driver_attr}"
+                # 計算式内の "driver" を、駆動元オブジェクト.アトリビュート名 に置換
+                formatted_formula = formula.replace("driver", driver_full)
+                # 例: driven.scaleY = pCube1.tx * 2;
+                expr_lines.append(f"{driven}.{driven_attr} = {formatted_formula};")
+            else:
+                skipped_objs.append(driven)
+                
+        if skipped_objs:
+            print(f"以下のオブジェクトにはアトリビュート '{driven_attr}' が存在しないためスキップされました: {skipped_objs}")
+            
+        if not expr_lines:
+            cmds.warning("有効なエクスプレッションを作成できませんでした。")
+            return
+            
+        expr_string = "\n".join(expr_lines)
+        expr_name = f"{driver}_{driver_attr}_to_{driven_attr}_expr"
+        
+        try:
+            if cmds.objExists(expr_name):
+                cmds.delete(expr_name)
+            
+            cmds.expression(name=expr_name, string=expr_string)
+            print(f"エクスプレッション作成成功: {expr_name}\n{expr_string}")
+            cmds.confirmDialog(title="完了", message=f"エクスプレッション連携を設定しました！\n\n【生成された式】\n{expr_string}", button=["OK"])
+        except Exception as e:
+            cmds.warning(f"エクスプレッション作成エラー: {e}")
+
+    cmds.button(label="エクスプレッションで関連付け", height=35, command=link_attributes_with_formula, backgroundColor=[0.3, 0.4, 0.6])
+    cmds.setParent("..")
+    
+    # タブ名を日本語に設定
+    cmds.tabLayout(tabs, edit=True, tabLabel=(
+        (add_layout, "アトリビュート追加"), 
+        (del_layout, "アトリビュート削除"),
+        (expr_layout, "エクスプレッション連携")
+    ))
+    
+    cmds.showWindow(window)
+
+multi_attr_manager_ui()

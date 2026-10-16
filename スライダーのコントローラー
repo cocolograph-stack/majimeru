@@ -1,0 +1,191 @@
+import maya.cmds as cmds
+
+class MgFacialControllersUI:
+    def __init__(self):
+        self.win_id = "mg_theFacialsUI"
+        
+        # Mayaのカラーインデックス定義 (名称とカラーID)
+        self.color_map = {
+            "Yellow": 17,
+            "Red": 13,
+            "Blue": 6,
+            "Cyan": 18,
+            "Green": 14,
+            "Pink": 9,
+            "White": 16,
+            "Orange": 12,
+            "Purple": 30,
+            "Dark Gray": 2,
+            "Light Gray": 3
+        }
+
+    def show(self):
+        if cmds.window(self.win_id, exists=True):
+            cmds.deleteUI(self.win_id)
+            
+        cmds.window(self.win_id, title="The Facial Controllers - V 0.1", widthHeight=(320, 420), sizeable=True)
+        
+        cmds.scrollLayout(childResizable=True)
+        
+        cmds.columnLayout(adjustableColumn=True, rowSpacing=10, columnOffset=["both", 10])
+        
+        cmds.separator(height=5, style="none")
+        cmds.text(label="The Controllers (Range: 0 to 1)", font="boldLabelFont", align="left")
+        cmds.separator(height=5, style="in")
+        
+        # コントローラータイプ選択
+        self.type_omg = cmds.optionMenuGrp(label="Controller Type", columnWidth2=(100, 180))
+        cmds.menuItem(label="Select controller type")
+        cmds.menuItem(label="XY - Square Box")
+        cmds.menuItem(label="X - Square Box")
+        cmds.menuItem(label="Y - Square Box")
+        cmds.menuItem(label="Border - Square Box")
+        
+        # コントローラー名入力
+        self.name_field = cmds.textFieldGrp(label="Controller Name", text="FacialCTRL", columnWidth2=(100, 180))
+        
+        # つまみ（円）の色選択
+        self.color_omg = cmds.optionMenuGrp(label="Handle Color", columnWidth2=(100, 180))
+        for col_name in self.color_map.keys():
+            cmds.menuItem(label=col_name)
+        cmds.optionMenuGrp(self.color_omg, edit=True, sl=1) # デフォルト (Yellow)
+
+        # 背景長方形（枠）の色選択
+        self.box_color_omg = cmds.optionMenuGrp(label="Box Color", columnWidth2=(100, 180))
+        for col_name in self.color_map.keys():
+            cmds.menuItem(label=col_name)
+        cmds.optionMenuGrp(self.box_color_omg, edit=True, sl=10) # デフォルト (Dark Gray)
+
+        # 文字色の選択
+        self.text_color_omg = cmds.optionMenuGrp(label="Text Color", columnWidth2=(100, 180))
+        for col_name in self.color_map.keys():
+            cmds.menuItem(label=col_name)
+        cmds.optionMenuGrp(self.text_color_omg, edit=True, sl=7) # デフォルト (White)
+        
+        cmds.separator(height=5, style="none")
+        
+        # 作成ボタン
+        cmds.button(
+            label="- Create Controller -",
+            height=40,
+            bgc=[0.2, 0.4, 0.5],
+            command=self.create_controller_cmd
+        )
+        
+        cmds.showWindow(self.win_id)
+
+    def create_controller_cmd(self, *args):
+        ctrl_type = cmds.optionMenuGrp(self.type_omg, query=True, value=True)
+        ctrl_name = cmds.textFieldGrp(self.name_field, query=True, text=True)
+        
+        selected_color_name = cmds.optionMenuGrp(self.color_omg, query=True, value=True)
+        color_idx = self.color_map.get(selected_color_name, 17)
+        
+        selected_box_color_name = cmds.optionMenuGrp(self.box_color_omg, query=True, value=True)
+        box_color_idx = self.color_map.get(selected_box_color_name, 2)
+
+        selected_text_color_name = cmds.optionMenuGrp(self.text_color_omg, query=True, value=True)
+        text_color_idx = self.color_map.get(selected_text_color_name, 16)
+        
+        if ctrl_type == "Select controller type" or not ctrl_name:
+            cmds.warning("Please select controller type and enter a name!")
+            return
+            
+        self.create_facial_curves(ctrl_name, ctrl_type, color_idx, box_color_idx, text_color_idx)
+
+    def create_facial_curves(self, bs_ctrl_name, ctrl_type, color_idx, box_color_idx, text_color_idx):
+        if ctrl_type != "Border - Square Box":
+            # 枠（0 ~ 1 の範囲）の作成
+            if ctrl_type == "XY - Square Box":
+                box_shape = cmds.curve(d=1, p=[(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 0)], k=[0,1,2,3,4], name=(bs_ctrl_name + "_boxTemplate"))
+            elif ctrl_type == "X - Square Box":
+                box_shape = cmds.curve(d=1, p=[(0, -0.0768779, 0), (1, -0.0768779, 0), (1, 0.0768779, 0), (0, 0.0768779, 0), (0, -0.0768779, 0)], k=[0,1,2,3,4], name=(bs_ctrl_name + "_boxTemplate"))
+            elif ctrl_type == "Y - Square Box":
+                box_shape = cmds.curve(d=1, p=[(-0.0768779, 0, 0), (0.0768779, 0, 0), (0.0768779, 1, 0), (-0.0768779, 1, 0), (-0.0768779, 0, 0)], k=[0,1,2,3,4], name=(bs_ctrl_name + "_boxTemplate"))
+
+            shapes = cmds.listRelatives(box_shape, shapes=True)
+            if shapes:
+                box_shape_renamed = cmds.rename(shapes[0], (box_shape + "Shape"))
+                cmds.setAttr((box_shape_renamed + ".overrideEnabled"), 1)
+                cmds.setAttr((box_shape_renamed + ".overrideDisplayType"), 0)
+                cmds.setAttr((box_shape_renamed + ".overrideColor"), box_color_idx)
+
+            # つまみ（円形コントローラー）作成
+            bs_xy_ctrl = cmds.circle(c=(0,0,0), nr=(0,0,1), sw=360, r=0.15, d=3, ut=0, tol=0.0001, s=8, ch=True, name=bs_ctrl_name)[0]
+
+            ctrl_shapes = cmds.listRelatives(bs_xy_ctrl, shapes=True)
+            if ctrl_shapes:
+                cmds.setAttr((ctrl_shapes[0] + ".overrideEnabled"), 1)
+                cmds.setAttr((ctrl_shapes[0] + ".overrideColor"), color_idx)
+
+            # 全タイプ共通で直接親（枠）に配置（余計な回転グループによる軸のズレを解消）
+            cmds.parent(bs_xy_ctrl, box_shape)
+
+            # テキストカーブ作成
+            text_curves = cmds.textCurves(ch=0, f="Arial|h-11|w400|c0", t=bs_ctrl_name)[0]
+            cmds.select(text_curves)
+            cmds.xform(cp=True)
+            
+            temp_point_c = cmds.pointConstraint(bs_xy_ctrl, text_curves)
+            cmds.delete(temp_point_c)
+
+            cmds.setAttr((text_curves + ".s"), 0.2, 0.2, 0.2)
+            cur_ty = cmds.getAttr(text_curves + ".ty")
+            cmds.setAttr((text_curves + ".ty"), cur_ty - 0.4)
+
+            # 文字のロック & カラー設定
+            all_text_transforms = cmds.listRelatives(text_curves, allDescendents=True, type="transform", fullPath=True) or []
+            all_text_transforms.append(text_curves)
+            
+            for t_tr in all_text_transforms:
+                for attr in ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]:
+                    if cmds.attributeQuery(attr, node=t_tr, exists=True):
+                        cmds.setAttr((t_tr + "." + attr), lock=True)
+                
+                t_shapes = cmds.listRelatives(t_tr, shapes=True, fullPath=True) or []
+                for t_sh in t_shapes:
+                    cmds.setAttr((t_sh + ".overrideEnabled"), 1)
+                    cmds.setAttr((t_sh + ".overrideDisplayType"), 0)
+                    cmds.setAttr((t_sh + ".overrideColor"), text_color_idx)
+
+            # 背景枠のトランスフォーム軸をロック
+            for attr in ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]:
+                cmds.setAttr((box_shape + "." + attr), lock=True)
+
+            # ★ 軸の制限と不要アトリビュートのロック設定 ★
+            if ctrl_type == "XY - Square Box":
+                cmds.transformLimits(bs_xy_ctrl, tx=(0, 1), etx=(True, True))
+                cmds.transformLimits(bs_xy_ctrl, ty=(0, 1), ety=(True, True))
+                lock_attrs = ["tz", "rx", "ry", "rz", "sx", "sy", "sz", "v"]
+                
+            elif ctrl_type == "X - Square Box":
+                cmds.transformLimits(bs_xy_ctrl, tx=(0, 1), etx=(True, True))
+                cmds.transformLimits(bs_xy_ctrl, ty=(0, 0), ety=(True, True))
+                cmds.setAttr((bs_xy_ctrl + ".ty"), 0)
+                lock_attrs = ["ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz", "v"]
+                
+            elif ctrl_type == "Y - Square Box":
+                cmds.transformLimits(bs_xy_ctrl, tx=(0, 0), etx=(True, True))
+                cmds.transformLimits(bs_xy_ctrl, ty=(0, 1), ety=(True, True))
+                cmds.setAttr((bs_xy_ctrl + ".tx"), 0)
+                lock_attrs = ["tx", "tz", "rx", "ry", "rz", "sx", "sy", "sz", "v"]
+
+            for attr in lock_attrs:
+                cmds.setAttr((bs_xy_ctrl + "." + attr), lock=True, keyable=False, channelBox=False)
+
+            cmds.parent(text_curves, box_shape)
+            cmds.select(bs_xy_ctrl)
+            
+        else:
+            box_shape = cmds.curve(d=1, p=[(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 0)], k=[0,1,2,3,4], name=(bs_ctrl_name + "_border"))
+            shapes = cmds.listRelatives(box_shape, shapes=True)
+            if shapes:
+                box_shape_renamed = cmds.rename(shapes[0], (box_shape + "Shape"))
+                cmds.setAttr((box_shape_renamed + ".overrideEnabled"), 1)
+                cmds.setAttr((box_shape_renamed + ".overrideDisplayType"), 0)
+                cmds.setAttr((box_shape_renamed + ".overrideColor"), box_color_idx)
+
+        print("Done: " + bs_ctrl_name)
+
+ui = MgFacialControllersUI()
+ui.show()

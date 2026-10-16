@@ -138,6 +138,11 @@ class MgSlimAccordionToolSuite:
             cmds.warning("名前を入力してください。")
             return
             
+        # 一番親となるグループを作成し、最初に明示的に全トランスフォームのロックを解除しておく
+        root_grp = cmds.group(em=True, name=ctrl_name)
+        for attr in ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]:
+            cmds.setAttr(f"{root_grp}.{attr}", lock=False)
+            
         if ctrl_type != "Border - Square Box":
             if ctrl_type == "XY - Square Box":
                 box_shape = cmds.curve(d=1, p=[(0,0,0), (1,0,0), (1,1,0), (0,1,0), (0,0,0)], k=[0,1,2,3,4], name=(ctrl_name + "_boxTemplate"))
@@ -153,7 +158,7 @@ class MgSlimAccordionToolSuite:
                 cmds.setAttr((box_sh + ".overrideDisplayType"), 0)
                 cmds.setAttr((box_sh + ".overrideColor"), box_color_idx)
 
-            ctrl = cmds.circle(c=(0,0,0), nr=(0,0,1), sw=360, r=0.15, d=3, s=8, ch=True, name=ctrl_name)[0]
+            ctrl = cmds.circle(c=(0,0,0), nr=(0,0,1), sw=360, r=0.15, d=3, s=8, ch=True, name=(ctrl_name + "_ctrl"))[0]
             ctrl_sh = cmds.listRelatives(ctrl, shapes=True)
             if ctrl_sh:
                 cmds.setAttr((ctrl_sh[0] + ".overrideEnabled"), 1)
@@ -183,6 +188,8 @@ class MgSlimAccordionToolSuite:
                     cmds.setAttr((t_s + ".overrideDisplayType"), 0)
                     cmds.setAttr((t_s + ".overrideColor"), text_color_idx)
 
+            # 背景ボックスを root_grp の子にして、ボックス自体の移動・回転・スケールはすべてロックする
+            cmds.parent(box_shape, root_grp)
             for attr in ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]:
                 cmds.setAttr((box_shape + "." + attr), lock=True)
 
@@ -202,7 +209,7 @@ class MgSlimAccordionToolSuite:
                 cmds.setAttr((ctrl + "." + attr), lock=True, keyable=False, channelBox=False)
 
             cmds.parent(text_curves, box_shape)
-            cmds.select(ctrl)
+            cmds.select(root_grp) # 作成後は親グループを選択状態にする
         else:
             box_shape = cmds.curve(d=1, p=[(0,0,0), (1,0,0), (1,1,0), (0,1,0), (0,0,0)], k=[0,1,2,3,4], name=(ctrl_name + "_border"))
             shapes = cmds.listRelatives(box_shape, shapes=True)
@@ -211,6 +218,17 @@ class MgSlimAccordionToolSuite:
                 cmds.setAttr((box_sh + ".overrideEnabled"), 1)
                 cmds.setAttr((box_sh + ".overrideDisplayType"), 0)
                 cmds.setAttr((box_sh + ".overrideColor"), box_color_idx)
+            
+            cmds.parent(box_shape, root_grp)
+            for attr in ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]:
+                cmds.setAttr((box_shape + "." + attr), lock=True)
+            cmds.select(root_grp)
+
+        # 最後に、一番親のグループ(root_grp)の回転・スケールをロックし、移動(tx, ty, tz)は動かせるように開放する
+        for attr in ["rx", "ry", "rz", "sx", "sy", "sz"]:
+            cmds.setAttr(f"{root_grp}.{attr}", lock=True, keyable=False, channelBox=False)
+        for attr in ["tx", "ty", "tz"]:
+            cmds.setAttr(f"{root_grp}.{attr}", lock=False, keyable=True, channelBox=True)
 
         print("Done: " + ctrl_name)
 
@@ -223,13 +241,10 @@ class MgSlimAccordionToolSuite:
             
         all_attrs = cmds.listAttr(target, keyable=True, unlocked=True) or []
         
-        # ヒストリから blendShape ノードを探し、設定されたターゲット名（エイリアス）を取得する
         history = cmds.listHistory(target, pruneDagObjects=True) or []
         for hist in history:
             if cmds.nodeType(hist) == "blendShape":
-                # エイリアス（ウェイトの名前）の一覧を取得
                 aliases = cmds.aliasAttr(hist, q=True) or []
-                # aliasAttr は [aliasName, plugName, aliasName, plugName, ...] の形式で返すため偶数番目を取り出す
                 bs_attrs = [aliases[i] for i in range(0, len(aliases), 2)]
                 all_attrs.extend(bs_attrs)
 
@@ -259,7 +274,6 @@ class MgSlimAccordionToolSuite:
             
         all_attrs = cmds.listAttr(target, keyable=True, unlocked=True) or []
         
-        # ヒストリから blendShape ノードを探し、設定されたターゲット名（エイリアス）を取得する
         history = cmds.listHistory(target, pruneDagObjects=True) or []
         for hist in history:
             if cmds.nodeType(hist) == "blendShape":
@@ -308,7 +322,6 @@ class MgSlimAccordionToolSuite:
                 history = cmds.listHistory(driven, pruneDagObjects=True) or []
                 found_node = None
                 for hist in history:
-                    # アトリビュート名、またはブレンドシェイプのエイリアスとして存在するかチェック
                     if cmds.attributeQuery(driven_attr, node=hist, exists=True):
                         found_node = hist
                         break

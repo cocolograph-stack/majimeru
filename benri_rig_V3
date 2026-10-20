@@ -1,5 +1,22 @@
 import maya.cmds as cmds
 
+def _create_cube_control(rgb_color):
+    """Helper function to create a default cube control curve with specified RGB color."""
+    cube = cmds.curve(d=1, p=[
+        (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5),
+        (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5),
+        (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5),
+        (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5)
+    ])
+    shapes = cmds.listRelatives(cube, shapes=True, fullPath=True)
+    if shapes:
+        shape = shapes[0]
+        cmds.setAttr(shape + ".overrideEnabled", 1)
+        cmds.setAttr(shape + ".overrideRGBColors", 1)
+        cmds.setAttr(shape + ".overrideColorRGB", rgb_color[0], rgb_color[1], rgb_color[2])
+    return cube
+
+
 def makeFKTR(*args):
     cmds.undoInfo(openChunk=True)
     try:
@@ -31,19 +48,9 @@ def makeFKTR(*args):
             short_name = jnt.split("|")[-1]
             base_name = short_name.replace("_JNT", "").replace("_jnt", "")
             
-            cube = cmds.curve(d=1, p=[
-                (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5),
-                (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5),
-                (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5),
-                (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5)
-            ])
-            cubeShape = cmds.pickWalk(d="down")
-            
-            cmds.setAttr(cubeShape[0] + ".overrideEnabled", 1)
-            cmds.setAttr(cubeShape[0] + ".overrideRGBColors", 1)
-            cmds.setAttr(cubeShape[0] + ".overrideColorRGB", rgbColor[0], rgbColor[1], rgbColor[2])
-            
+            cube = _create_cube_control(rgbColor)
             ctrl_name = cmds.rename(cube, controlPref + base_name + controlSuff)
+            
             cmds.select(ctrl_name)
             cmds.scale(controlSize, controlSize, controlSize, r=True)
             cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
@@ -70,7 +77,7 @@ def makeFKTR(*args):
                 if cmds.objExists(parent_ctrl) and cmds.objExists(current_offset):
                     try:
                         cmds.parent(current_offset, parent_ctrl)
-                    except:
+                    except Exception:
                         pass
     finally:
         cmds.undoInfo(closeChunk=True)
@@ -79,32 +86,22 @@ def makeFKTR(*args):
 def makeIKTR(*args):
     cmds.undoInfo(openChunk=True)
     try:
-        selection = cmds.ls(sl=True)
+        selection = cmds.ls(sl=True, long=True)
         if len(selection) != 2:
             cmds.error("ジョイントを正確に2つ（根元と先端）選択してください。")
             
         start_joint = selection[0]
         end_joint = selection[1]
-        base_end_joint = end_joint.replace("_JNT", "").replace("_jnt", "")
+        base_end_joint = end_joint.split("|")[-1].replace("_JNT", "").replace("_jnt", "")
         
         controlSize = cmds.floatSliderGrp("controlSize", q=True, v=True)
         controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
         controlSuff = cmds.textFieldGrp("controlName", q=True, text=True)
         rgbColor = cmds.colorSliderGrp("controlColorRGB", q=True, rgb=True)
         
-        cube = cmds.curve(d=1, p=[
-            (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5),
-            (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5),
-            (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5),
-            (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5)
-        ])
-        cubeShape = cmds.pickWalk(d="down")
-        
-        cmds.setAttr(cubeShape[0] + ".overrideEnabled", 1)
-        cmds.setAttr(cubeShape[0] + ".overrideRGBColors", 1)
-        cmds.setAttr(cubeShape[0] + ".overrideColorRGB", rgbColor[0], rgbColor[1], rgbColor[2])
-        
+        cube = _create_cube_control(rgbColor)
         ctrl_name = cmds.rename(cube, controlPref + base_end_joint + controlSuff)
+        
         cmds.select(ctrl_name)
         cmds.scale(controlSize, controlSize, controlSize, r=True)
         cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
@@ -125,7 +122,8 @@ def makeIKTR(*args):
             endEffector=end_joint,
             sol="ikRPsolver"
         )
-        ik_handle_name = cmds.rename(ik_handle, start_joint + "_ikHandle")
+        short_start = start_joint.split("|")[-1]
+        ik_handle_name = cmds.rename(ik_handle, short_start + "_ikHandle")
         cmds.parent(ik_handle_name, ctrl_name)
     finally:
         cmds.undoInfo(closeChunk=True)
@@ -134,7 +132,7 @@ def makeIKTR(*args):
 def makeMeshFitCtrl(*args):
     cmds.undoInfo(openChunk=True)
     try:
-        sel = cmds.ls(sl=True, flatten=True)
+        sel = cmds.ls(sl=True, flatten=True, long=True)
         if not sel:
             cmds.error("コントローラーを合わせるモデル、オブジェクト、または頂点を選択してください。")
             
@@ -155,25 +153,14 @@ def makeMeshFitCtrl(*args):
         controlSuff = cmds.textFieldGrp("controlName", q=True, text=True)
         rgbColor = cmds.colorSliderGrp("controlColorRGB", q=True, rgb=True)
         
-        base_name = cmds.ls(sel[0], o=True)[0]
+        base_name = cmds.ls(sel[0], o=True)[0].split("|")[-1]
         if "." in base_name:
             base_name = base_name.split(".")[0]
 
-        cube = cmds.curve(d=1, p=[
-            (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5),
-            (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5),
-            (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5),
-            (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5)
-        ])
-        cubeShape = cmds.pickWalk(d="down")
-        
-        cmds.setAttr(cubeShape[0] + ".overrideEnabled", 1)
-        cmds.setAttr(cubeShape[0] + ".overrideRGBColors", 1)
-        cmds.setAttr(cubeShape[0] + ".overrideColorRGB", rgbColor[0], rgbColor[1], rgbColor[2])
-        
+        cube = _create_cube_control(rgbColor)
         ctrl_name = cmds.rename(cube, controlPref + base_name + "_Fit" + controlSuff)
-        cmds.select(ctrl_name)
         
+        cmds.select(ctrl_name)
         cmds.scale(size_x * controlSize, size_y * controlSize, size_z * controlSize, r=True)
         cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
         
@@ -232,7 +219,7 @@ def applyColorToSelected(*args):
 def renameJoints(*args):
     cmds.undoInfo(openChunk=True)
     try:
-        selection = cmds.ls(sl=True)
+        selection = cmds.ls(sl=True, long=True)
         if not selection:
             cmds.error("リネームするジョイントを選択してください。")
             
@@ -295,22 +282,8 @@ def createFKControls():
     cmds.text(label="ジョイントのリネーム", align='left', font='boldLabelFont')
     
     cmds.optionMenuGrp("renamePresetMenu", label="ジョイント名", cw2=(90, 220))
-    cmds.menuItem(label="clavicle")
-    cmds.menuItem(label="uarm")
-    cmds.menuItem(label="elbow")
-    cmds.menuItem(label="wrist")
-    cmds.menuItem(label="hip")
-    cmds.menuItem(label="knee")
-    cmds.menuItem(label="ankle")
-    cmds.menuItem(label="ball")
-    cmds.menuItem(label="toe")
-    cmds.menuItem(label="spine")
-    cmds.menuItem(label="spine01")
-    cmds.menuItem(label="spine02")
-    cmds.menuItem(label="chest")
-    cmds.menuItem(label="neck")
-    cmds.menuItem(label="head")
-    cmds.menuItem(label="twist")
+    for jname in ["clavicle", "uarm", "elbow", "wrist", "hip", "knee", "ankle", "ball", "toe", "spine", "spine01", "spine02", "chest", "neck", "head", "twist"]:
+        cmds.menuItem(label=jname)
     
     cmds.button(
         label="選択したジョイント名を上で選んでこのボタン押して",
@@ -320,11 +293,8 @@ def createFKControls():
     )
     
     cmds.optionMenuGrp("fingerPresetMenu", label="指の名前", cw2=(90, 220))
-    cmds.menuItem(label="p")   # 小指 (Pinky)
-    cmds.menuItem(label="ri")  # 薬指 (Ring)
-    cmds.menuItem(label="mi")  # 中指 (Middle)
-    cmds.menuItem(label="in")  # 人差し指 (Index)
-    cmds.menuItem(label="th")  # 親指 (Thumb)
+    for fname in ["p", "ri", "mi", "in", "th"]:
+        cmds.menuItem(label=fname)
     
     cmds.button(
         label="根元だけ選択して指を一括リネーム",
@@ -362,13 +332,8 @@ def createFKControls():
         cw2=(110, 200),
         changeCommand=applyColorPreset
     )
-    cmds.menuItem(label="青")
-    cmds.menuItem(label="ピンク")
-    cmds.menuItem(label="赤")
-    cmds.menuItem(label="黄")
-    cmds.menuItem(label="緑")
-    cmds.menuItem(label="白")
-    cmds.menuItem(label="黒")
+    for cname in ["青", "ピンク", "赤", "黄", "緑", "白", "黒"]:
+        cmds.menuItem(label=cname)
     
     cmds.textFieldGrp(
         "controlPrefix",
@@ -396,7 +361,7 @@ def createFKControls():
     cmds.text(label="IK（操り人形の動きを再現するときに使います）", align='left', font='boldLabelFont')
     
     cmds.button(
-        label="IKコントローラを作る (※根元と先端の2つを選択)",
+        label="腕用のIKコントローラーを作る",
         height=30,
         bgc=[0.2, 0.7, 1.0],
         command=makeIKTR

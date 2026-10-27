@@ -17,6 +17,34 @@ def _create_cube_control(rgb_color):
     return cube
 
 
+def _get_side_tag():
+    """Helper to parse joint side selection (L/R)."""
+    side_val = cmds.optionMenuGrp("sidePresetMenu", q=True, value=True)
+    if side_val == "_L":
+        return "", "_L"
+    elif side_val == "_R":
+        return "", "_R"
+    elif side_val == "L_":
+        return "L_", ""
+    elif side_val == "R_":
+        return "R_", ""
+    return "", ""
+
+
+def _get_finger_side_tag():
+    """Helper to parse finger side selection (L/R)."""
+    side_val = cmds.optionMenuGrp("fingerSidePresetMenu", q=True, value=True)
+    if side_val == "_L":
+        return "", "_L"
+    elif side_val == "_R":
+        return "", "_R"
+    elif side_val == "L_":
+        return "L_", ""
+    elif side_val == "R_":
+        return "R_", ""
+    return "", ""
+
+
 def makeFKTR(*args):
     cmds.undoInfo(openChunk=True)
     try:
@@ -225,13 +253,14 @@ def renameJoints(*args):
             
         selected_name = cmds.optionMenuGrp("renamePresetMenu", q=True, value=True)
         controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+        prefix_side, suffix_side = _get_side_tag()
         
         if len(selection) == 1:
-            new_name = controlPref + selected_name + "_JNT"
+            new_name = controlPref + prefix_side + selected_name + suffix_side + "_JNT"
             cmds.rename(selection[0], new_name)
         else:
             for i, obj in enumerate(selection):
-                new_name = controlPref + selected_name + "_" + str(i+1).zfill(2) + "_JNT"
+                new_name = controlPref + prefix_side + selected_name + "_" + str(i+1).zfill(2) + suffix_side + "_JNT"
                 cmds.rename(obj, new_name)
     finally:
         cmds.undoInfo(closeChunk=True)
@@ -246,6 +275,7 @@ def renameFingerJoints(*args):
             
         finger_name = cmds.optionMenuGrp("fingerPresetMenu", q=True, value=True)
         controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+        prefix_side, suffix_side = _get_finger_side_tag()
         
         for sel in selection:
             chain = [sel]
@@ -262,7 +292,7 @@ def renameFingerJoints(*args):
             rename_pairs.reverse()
             
             for obj, i in rename_pairs:
-                new_name = controlPref + finger_name + "_" + str(i+1).zfill(2) + "_JNT"
+                new_name = controlPref + prefix_side + finger_name + "_" + str(i+1).zfill(2) + suffix_side + "_JNT"
                 cmds.rename(obj, new_name)
     finally:
         cmds.undoInfo(closeChunk=True)
@@ -273,7 +303,10 @@ def createFKControls():
     if cmds.window(window_name, exists=True):
         cmds.deleteUI(window_name, window=True)
     
-    cmds.window(window_name, title="majimeru リグ＆コントロール作成ツール", widthHeight=(400, 1020))
+    cmds.window(window_name, title="majimeru リグ＆コントロール作成ツール", widthHeight=(420, 700))
+    
+    # スクロールレイアウトを追加して画面が切れないように対応
+    cmds.scrollLayout(childResizable=True)
     cmds.columnLayout(adj=True, rowSpacing=10, columnOffset=('both', 15))
     
     cmds.separator(style='none', height=5)
@@ -281,9 +314,13 @@ def createFKControls():
     # --- リネームセクション ---
     cmds.text(label="ジョイントのリネーム", align='left', font='boldLabelFont')
     
-    cmds.optionMenuGrp("renamePresetMenu", label="ジョイント名", cw2=(90, 220))
+    cmds.optionMenuGrp("renamePresetMenu", label="ジョイント名", cw2=(90, 250))
     for jname in ["clavicle", "uarm", "elbow", "wrist", "hip", "knee", "ankle", "ball", "toe", "spine", "spine01", "spine02", "chest", "neck", "head", "twist"]:
         cmds.menuItem(label=jname)
+
+    cmds.optionMenuGrp("sidePresetMenu", label="左右（サイド）", cw2=(90, 250))
+    for sname in ["なし", "_L", "_R", "L_", "R_"]:
+        cmds.menuItem(label=sname)
     
     cmds.button(
         label="選択したジョイント名を上で選んでこのボタン押して",
@@ -292,9 +329,16 @@ def createFKControls():
         command=renameJoints
     )
     
-    cmds.optionMenuGrp("fingerPresetMenu", label="指の名前", cw2=(90, 220))
+    # --- 指リネームセクション ---
+    cmds.text(label="指のリネーム", align='left', font='boldLabelFont')
+    
+    cmds.optionMenuGrp("fingerPresetMenu", label="指の名前", cw2=(90, 250))
     for fname in ["p", "ri", "mi", "in", "th"]:
         cmds.menuItem(label=fname)
+
+    cmds.optionMenuGrp("fingerSidePresetMenu", label="指の左右", cw2=(90, 250))
+    for sname in ["なし", "_L", "_R", "L_", "R_"]:
+        cmds.menuItem(label=sname)
     
     cmds.button(
         label="根元だけ選択して指を一括リネーム",
@@ -311,7 +355,7 @@ def createFKControls():
         "controlSize",
         label="コントロールサイズ",
         field=True,
-        cw3=(110, 50, 160),
+        cw3=(110, 50, 180),
         minValue=0.01,
         maxValue=50.0,
         fieldMinValue=0.1,
@@ -329,7 +373,7 @@ def createFKControls():
     cmds.optionMenuGrp(
         "colorPresetMenu",
         label="カラーリスト",
-        cw2=(110, 200),
+        cw2=(110, 220),
         changeCommand=applyColorPreset
     )
     for cname in ["青", "ピンク", "赤", "黄", "緑", "白", "黒"]:
@@ -338,14 +382,14 @@ def createFKControls():
     cmds.textFieldGrp(
         "controlPrefix",
         label="コントロール接頭辞",
-        cw2=(110, 200),
+        cw2=(110, 220),
         text=""
     )
     
     cmds.textFieldGrp(
         "controlName",
         label="コントロール接尾辞",
-        cw2=(110, 200),
+        cw2=(110, 220),
         text="_CTRL"
     )
     
@@ -396,7 +440,7 @@ def createFKControls():
         rgb=(0.3, 0.7, 1.0)
     )
     
-    cmds.separator(style='none', height=5)
+    cmds.separator(style='none', height=15)
     
     cmds.showWindow(window_name)
 

@@ -1,12 +1,12 @@
 import maya.cmds as cmds
 
 def _create_cube_control(rgb_color):
-    """Helper function to create a vertically oriented control curve with specified RGB color."""
+    """Helper function to create a cubic control curve with specified RGB color."""
     cube = cmds.curve(d=1, p=[
-        (-0.2, 0.5, 0.2), (0.2, 0.5, 0.2), (0.2, 0.5, -0.2), (-0.2, 0.5, -0.2), (-0.2, 0.5, 0.2),
-        (-0.2, -0.5, 0.2), (0.2, -0.5, 0.2), (0.2, -0.5, -0.2), (-0.2, -0.5, -0.2), (-0.2, -0.5, 0.2),
-        (0.2, -0.5, 0.2), (0.2, 0.5, 0.2), (0.2, 0.5, -0.2), (0.2, -0.5, -0.2), (-0.2, -0.5, -0.2),
-        (-0.2, -0.5, -0.2), (-0.2, 0.5, -0.2), (-0.2, 0.5, 0.2)
+        (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5),
+        (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5),
+        (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5),
+        (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5)
     ])
     shapes = cmds.listRelatives(cube, shapes=True, fullPath=True)
     if shapes:
@@ -105,32 +105,26 @@ def makeFKTR(*args):
             cube = _create_cube_control(rgbColor)
             ctrl_name = cmds.rename(cube, controlPref + base_name + controlSuff)
             
+            temp_orient = cmds.orientConstraint(jnt, ctrl_name)
+            cmds.delete(temp_orient)
+            temp_point = cmds.pointConstraint(jnt, ctrl_name)
+            cmds.delete(temp_point)
+
             cmds.select(ctrl_name)
             cmds.scale(controlSize, controlSize, controlSize, r=True)
             cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
             
-            offset_name = cmds.group(em=True, n=controlPref + base_name + "_offset")
-            temp_orient = cmds.orientConstraint(jnt, offset_name)
-            cmds.delete(temp_orient)
-            temp_point = cmds.pointConstraint(jnt, offset_name)
-            cmds.delete(temp_point)
-
-            cmds.parent(ctrl_name, offset_name)
-            
-            for attr in [".tx", ".ty", ".tz", ".rx", ".ry", ".rz"]:
-                cmds.setAttr(ctrl_name + attr, 0)
-                
             cmds.parentConstraint(ctrl_name, jnt, mo=True)
-            created_ctrls[jnt] = offset_name
+            created_ctrls[jnt] = ctrl_name
 
         for jnt in target_joints:
             parent_jnt = cmds.listRelatives(jnt, parent=True, fullPath=True)
             if parent_jnt and parent_jnt[0] in created_ctrls:
                 parent_ctrl = controlPref + parent_jnt[0].split("|")[-1].replace("_JNT", "").replace("_jnt", "") + controlSuff
-                current_offset = created_ctrls[jnt]
-                if cmds.objExists(parent_ctrl) and cmds.objExists(current_offset):
+                current_ctrl = created_ctrls[jnt]
+                if cmds.objExists(parent_ctrl) and cmds.objExists(current_ctrl):
                     try:
-                        cmds.parent(current_offset, parent_ctrl)
+                        cmds.parent(current_ctrl, parent_ctrl)
                     except Exception:
                         pass
     finally:
@@ -156,21 +150,15 @@ def makeIKTR(*args):
         cube = _create_cube_control(rgbColor)
         ctrl_name = cmds.rename(cube, controlPref + base_end_joint + controlSuff)
         
+        temp_orient = cmds.orientConstraint(end_joint, ctrl_name)
+        cmds.delete(temp_orient)
+        temp_point = cmds.pointConstraint(end_joint, ctrl_name)
+        cmds.delete(temp_point)
+
         cmds.select(ctrl_name)
         cmds.scale(controlSize, controlSize, controlSize, r=True)
         cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
         
-        offset_name = cmds.group(em=True, n=controlPref + base_end_joint + "_offset")
-        temp_orient = cmds.orientConstraint(end_joint, offset_name)
-        cmds.delete(temp_orient)
-        temp_point = cmds.pointConstraint(end_joint, offset_name)
-        cmds.delete(temp_point)
-
-        cmds.parent(ctrl_name, offset_name)
-        
-        for attr in [".tx", ".ty", ".tz", ".rx", ".ry", ".rz"]:
-            cmds.setAttr(ctrl_name + attr, 0)
-            
         ik_handle, ik_effector = cmds.ikHandle(
             startJoint=start_joint,
             endEffector=end_joint,
@@ -218,13 +206,7 @@ def makeMeshFitCtrl(*args):
         cmds.scale(size_x * controlSize, size_y * controlSize, size_z * controlSize, r=True)
         cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
         
-        offset_name = cmds.group(em=True, n=controlPref + base_name + "_Fit_offset")
-        cmds.xform(offset_name, ws=True, t=(center_x, center_y, center_z))
-
-        cmds.parent(ctrl_name, offset_name)
-        
-        for attr in [".tx", ".ty", ".tz", ".rx", ".ry", ".rz"]:
-            cmds.setAttr(ctrl_name + attr, 0)
+        cmds.xform(ctrl_name, ws=True, t=(center_x, center_y, center_z))
     finally:
         cmds.undoInfo(closeChunk=True)
 
@@ -329,7 +311,7 @@ def createFKControls():
     if cmds.window(window_name, exists=True):
         cmds.deleteUI(window_name, window=True)
     
-    cmds.window(window_name, title="majimeru リグ＆コントロール作成ツール", widthHeight=(420, 700))
+    cmds.window(window_name, title="majimeru リグ＆コントロール作成ツール", widthHeight=(420, 670))
     
     cmds.scrollLayout(childResizable=True)
     cmds.columnLayout(adj=True, rowSpacing=10, columnOffset=('both', 15))
@@ -440,11 +422,6 @@ def createFKControls():
     cmds.text(label="", height=4, bgc=[0.9, 0.9, 0.9])
     cmds.text(label="頂点などを選択してそれに合わせてコントローラーを形作ります", align='left', font='boldLabelFont')
     
-    cmds.button(
-        label="選択方法：1つ選択＝子孫全部 / 2つ選択＝間を一括作成",
-        height=20,
-        en=False
-    )
     cmds.button(
         label="選択した形状（頂点など）に合わせてコントローラを作る",
         height=30,

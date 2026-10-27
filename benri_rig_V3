@@ -1,12 +1,12 @@
 import maya.cmds as cmds
 
 def _create_cube_control(rgb_color):
-    """Helper function to create a default cube control curve with specified RGB color."""
+    """Helper function to create a flat cube control curve (shorter height) with specified RGB color."""
     cube = cmds.curve(d=1, p=[
-        (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5),
-        (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5),
-        (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5),
-        (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5)
+        (-0.5, 0.25, 0.5), (0.5, 0.25, 0.5), (0.5, 0.25, -0.5), (-0.5, 0.25, -0.5), (-0.5, 0.25, 0.5),
+        (-0.5, -0.25, 0.5), (0.5, -0.25, 0.5), (0.5, -0.25, -0.5), (-0.5, -0.25, -0.5), (-0.5, -0.25, 0.5),
+        (0.5, -0.25, 0.5), (0.5, 0.25, 0.5), (0.5, 0.25, -0.5), (0.5, -0.25, -0.5), (-0.5, -0.25, -0.5),
+        (-0.5, -0.25, -0.5), (-0.5, 0.25, -0.5), (-0.5, 0.25, 0.5)
     ])
     shapes = cmds.listRelatives(cube, shapes=True, fullPath=True)
     if shapes:
@@ -305,7 +305,6 @@ def createFKControls():
     
     cmds.window(window_name, title="majimeru リグ＆コントロール作成ツール", widthHeight=(420, 700))
     
-    # スクロールレイアウトを追加して画面が切れないように対応
     cmds.scrollLayout(childResizable=True)
     cmds.columnLayout(adj=True, rowSpacing=10, columnOffset=('both', 15))
     

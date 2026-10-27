@@ -52,27 +52,53 @@ def makeFKTR(*args):
         if not selection:
             cmds.error("コントロールするオブジェクトを1つ以上選択してください。")
             
+        target_joints = []
+        
+        # 1つの選択：従来通り子孫すべてを対象にする
         if len(selection) == 1:
+            target_joints.append(selection[0])
             descendants = cmds.listRelatives(selection[0], allDescendents=True, type="joint", fullPath=True)
             if descendants:
                 descendants.reverse()
-                selection = selection + descendants
+                target_joints.extend(descendants)
+                
+        # 2つの選択：「あるところ（根元）からあるところ（先端）まで」の範囲指定に対応
+        elif len(selection) == 2:
+            start_jnt = selection[0]
+            end_jnt = selection[1]
+            
+            current = end_jnt
+            chain = [current]
+            while current != start_jnt:
+                parent = cmds.listRelatives(current, parent=True, type="joint", fullPath=True)
+                if not parent:
+                    break
+                current = parent[0]
+                chain.append(current)
+            chain.reverse()
+            
+            if chain and chain[0] == start_jnt:
+                target_joints = chain
+            else:
+                target_joints = selection
+        else:
+            target_joints = selection
 
         controlSize = cmds.floatSliderGrp("controlSize", q=True, v=True)
         controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
         controlSuff = cmds.textFieldGrp("controlName", q=True, text=True)
         rgbColor = cmds.colorSliderGrp("controlColorRGB", q=True, rgb=True)
 
-        for jnt in selection:
+        for jnt in target_joints:
             short_name = jnt.split("|")[-1]
             base_name = short_name.replace("_JNT", "").replace("_jnt", "")
             full_name = controlPref + base_name + controlSuff
             if cmds.objExists(full_name):
-                cmds.error("重複しない名前の組み合わせを入力してください。")
+                cmds.error("コントローラー名がすでに存在します。重複しない名前の組み合わせにしてください。")
 
         created_ctrls = {}
 
-        for jnt in selection:
+        for jnt in target_joints:
             short_name = jnt.split("|")[-1]
             base_name = short_name.replace("_JNT", "").replace("_jnt", "")
             
@@ -97,7 +123,7 @@ def makeFKTR(*args):
             cmds.parentConstraint(ctrl_name, jnt, mo=True)
             created_ctrls[jnt] = offset_name
 
-        for jnt in selection:
+        for jnt in target_joints:
             parent_jnt = cmds.listRelatives(jnt, parent=True, fullPath=True)
             if parent_jnt and parent_jnt[0] in created_ctrls:
                 parent_ctrl = controlPref + parent_jnt[0].split("|")[-1].replace("_JNT", "").replace("_jnt", "") + controlSuff
@@ -414,6 +440,11 @@ def createFKControls():
     cmds.text(label="", height=4, bgc=[0.9, 0.9, 0.9])
     cmds.text(label="頂点などを選択してそれに合わせてコントローラーを形作ります", align='left', font='boldLabelFont')
     
+    cmds.button(
+        label="選択方法：1つ選択＝子孫全部 / 2つ選択＝間を一括作成",
+        height=20,
+        en=False
+    )
     cmds.button(
         label="選択した形状（頂点など）に合わせてコントローラを作る",
         height=30,

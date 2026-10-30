@@ -1,0 +1,191 @@
+import maya.cmds as cmds
+import maya.mel as mel
+import os
+
+def update_resolution(*args):
+    try:
+        w = cmds.intField(width_field, query=True, value=True)
+        h = cmds.intField(height_field, query=True, value=True)
+        cmds.setAttr("defaultResolution.width", w)
+        cmds.setAttr("defaultResolution.height", h)
+    except:
+        pass
+
+def update_renderer(item):
+    renderer_map = {
+        "Arnold Renderer": "arnold",
+        "Maya Software": "mayaSoftware",
+        "Maya Hardware 2.0": "mayaHardware2"
+    }
+    val = renderer_map.get(item, "arnold")
+    try:
+        cmds.setAttr("defaultRenderGlobals.currentRenderer", val, type="string")
+    except:
+        pass
+
+def update_format(item):
+    try:
+        # Mayaの正式な画像フォーマットIDマッピング
+        # PNG = 8, OpenEXR = 32, JPEG = 3, TIFF = 7
+        format_map = {
+            "PNG (.png)": 8,
+            "OpenEXR (.exr)": 32,
+            "JPEG (.jpg)": 3,
+            "TIFF (.tiff)": 7
+        }
+        fmt_id = format_map.get(item, 8)
+        
+        # 1. Maya標準のレンダーグローバルのフォーマットを強制指定
+        cmds.setAttr("defaultRenderGlobals.imageFormat", fmt_id)
+        
+        # 2. もしArnoldの場合は、Arnold側の専用イメージフォーマットアトリビュートも強制同期させる
+        if cmds.objExists("defaultArnoldDriver.ai_translator"):
+            translator_map = {
+                8: "png",
+                32: "exr",
+                3: "jpeg",
+                7: "tiff"
+            }
+            cmds.setAttr("defaultArnoldDriver.ai_translator", translator_map.get(fmt_id, "png"), type="string")
+            
+        print(f"📌 画像フォーマットを強制変更しました: {item} (ID: {fmt_id})")
+    except Exception as e:
+        print(f"⚠️ フォーマット変更時に警告: {e}")
+
+def update_prefix(*args):
+    try:
+        val = cmds.textField(prefix_field, query=True, text=True)
+        clean_val = val.split('.')[0] if val else "render"
+        cmds.setAttr("defaultRenderGlobals.imageFilePrefix", clean_val, type="string")
+    except:
+        pass
+
+def update_frame_range(*args):
+    try:
+        start = cmds.intField(start_frame_field, query=True, value=True)
+        end = cmds.intField(end_frame_field, query=True, value=True)
+        cmds.setAttr("defaultRenderGlobals.startFrame", start)
+        cmds.setAttr("defaultRenderGlobals.endFrame", end)
+    except:
+        pass
+
+def get_cameras():
+    cameras = []
+    cams = cmds.ls(cameras=True)
+    default_cams = ['frontShape', 'perspShape', 'sideShape', 'topShape']
+    for c in cams:
+        if c not in default_cams:
+            transform = cmds.listRelatives(c, parent=True, fullPath=True)
+            if transform:
+                cameras.append(transform[0].split('|')[-1])
+    if not cameras:
+        cameras = ['persp']
+    return sorted(list(set(cameras)))
+
+def open_render_sequence_options(*args):
+    try:
+        update_frame_range()
+        selected_cam = cmds.optionMenu(camera_menu, query=True, value=True)
+        
+        # 実行時にも現在のUIのフォーマット選択を確実に再適用
+        selected_format_label = cmds.optionMenu(format_menu, query=True, value=True)
+        update_format(selected_format_label)
+        
+        # プレフィックスのクリーンアップ
+        raw_prefix = cmds.textField(prefix_field, query=True, text=True) or "render"
+        clean_prefix = raw_prefix.split('.')[0]
+        if not clean_prefix:
+            clean_prefix = "render"
+        cmds.setAttr("defaultRenderGlobals.imageFilePrefix", clean_prefix, type="string")
+        
+        # 3桁パディング・連番設定の強制適用
+        cmds.setAttr("defaultRenderGlobals.outFormatControl", 0)
+        cmds.setAttr("defaultRenderGlobals.animation", 1)
+        cmds.setAttr("defaultRenderGlobals.putFrameBeforeExt", 1)
+        cmds.setAttr("defaultRenderGlobals.extensionPadding", 3)
+        
+        # カメラをビューに切り替え
+        cmds.lookThru(selected_cam)
+        
+        print("--- レンダー シーケンス オプションウィンドウを開きます ---")
+        
+        # 公式のレンダーシーケンスオプションウィンドウを起動
+        mel.eval('RenderSequenceOptions;')
+        
+    except Exception as e:
+        cmds.warning(f"レンダー シーケンス オプションウィンドウのオープンに失敗しました: {e}")
+
+# UIの構築
+window_name = "CompactRenderSettings"
+if cmds.window(window_name, exists=True):
+    cmds.deleteUI(window_name, window=True)
+
+window = cmds.window(window_name, title="コンパクト・レンダー設定", widthHeight=(420, 320), sizeable=True)
+
+scroll_layout = cmds.scrollLayout(horizontalScrollBarThickness=0, verticalScrollBarThickness=10)
+
+main_layout = cmds.columnLayout(adjustableColumn=True, rowSpacing=10, columnOffset=("both", 10))
+cmds.text(label="", height=5)
+
+# レンダラー選択
+cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 270))
+cmds.text(label="レンダラー:", align="left")
+curr_renderer = cmds.getAttr("defaultRenderGlobals.currentRenderer")
+r_list = ["Arnold Renderer", "Maya Software", "Maya Hardware 2.0"]
+cmds.optionMenu(label="", changeCommand=update_renderer)
+for r in r_list:
+    cmds.menuItem(label=r)
+cmds.setParent("..")
+
+# カメラ選択
+cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 270))
+cmds.text(label="カメラ:", align="left")
+camera_menu = cmds.optionMenu(label="")
+cams = get_cameras()
+for cam in cams:
+    cmds.menuItem(label=cam)
+cmds.setParent("..")
+
+# フレーム範囲設定
+cmds.rowLayout(numberOfColumns=4, columnWidth4=(120, 120, 20, 130))
+cmds.text(label="フレーム範囲:", align="left")
+start_f = int(cmds.getAttr("defaultRenderGlobals.startFrame"))
+end_f = int(cmds.getAttr("defaultRenderGlobals.endFrame"))
+start_frame_field = cmds.intField(value=start_f, changeCommand=update_frame_range)
+cmds.text(label="～", align="center")
+end_frame_field = cmds.intField(value=end_f, changeCommand=update_frame_range)
+cmds.setParent("..")
+
+# 解像度設定
+cmds.rowLayout(numberOfColumns=4, columnWidth4=(120, 120, 20, 130))
+cmds.text(label="解像度:", align="left")
+curr_w = cmds.getAttr("defaultResolution.width")
+curr_h = cmds.getAttr("defaultResolution.height")
+width_field = cmds.intField(value=curr_w, changeCommand=update_resolution)
+cmds.text(label="×", align="center")
+height_field = cmds.intField(value=curr_h, changeCommand=update_resolution)
+cmds.setParent("..")
+
+# 画像フォーマット（最上位にPNG）
+cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 270))
+cmds.text(label="フォーマット:", align="left")
+format_menu = cmds.optionMenu(label="", changeCommand=update_format)
+formats = ["PNG (.png)", "OpenEXR (.exr)", "JPEG (.jpg)", "TIFF (.tiff)"]
+for f in formats:
+    cmds.menuItem(label=f)
+cmds.setParent("..")
+
+# ファイル名プレフィックス
+cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 270))
+cmds.text(label="ファイル名プレフィックス:", align="left")
+curr_prefix = cmds.getAttr("defaultRenderGlobals.imageFilePrefix") or ""
+curr_prefix = curr_prefix.split('.')[0]
+prefix_field = cmds.textField(text=curr_prefix, changeCommand=update_prefix)
+cmds.setParent("..")
+
+cmds.separator(height=10, style="in")
+
+# レンダリング実行ボタン
+cmds.button(label="🎬 レンダーシーケンス設定を開く", command=open_render_sequence_options, height=40, backgroundColor=[0.2, 0.5, 0.3])
+
+cmds.showWindow(window)

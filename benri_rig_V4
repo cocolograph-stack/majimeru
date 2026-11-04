@@ -1,0 +1,1138 @@
+import math
+import maya.cmds as cmds
+
+def _create_control(rgb_color, shape_type=None, axis=None):
+    if shape_type is None:
+        if cmds.optionMenuGrp("controlShapeMenu", exists=True):
+            shape_type = cmds.optionMenuGrp("controlShapeMenu", q=True, value=True)
+        else:
+            shape_type = "正六面体（キューブ）"
+
+    if axis is None:
+        if cmds.optionMenuGrp("controlAxisMenu", exists=True):
+            axis_val = cmds.optionMenuGrp("controlAxisMenu", q=True, value=True)
+            if "X" in axis_val:
+                axis = "X"
+            elif "Z" in axis_val:
+                axis = "Z"
+            else:
+                axis = "Y"
+        else:
+            axis = "X"
+
+    if shape_type == "球（スフィア）":
+        pts = []
+        for i in range(17):
+            a = math.radians(i * 22.5)
+            pts.append((math.cos(a) * 0.5, 0.0, math.sin(a) * 0.5))
+        for i in range(1, 17):
+            a = math.radians(i * 22.5)
+            pts.append((math.cos(a) * 0.5, math.sin(a) * 0.5, 0.0))
+        pts.append((0.0, 0.5, 0.0))
+        for i in range(1, 17):
+            a = math.radians(i * 22.5)
+            pts.append((0.0, math.cos(a) * 0.5, math.sin(a) * 0.5))
+        ctrl = cmds.curve(d=1, p=pts)
+
+    elif shape_type == "円錐（コーン）":
+        pts = []
+        for i in range(17):
+            a = math.radians(i * 22.5)
+            pts.append((math.cos(a) * 0.5, -0.5, math.sin(a) * 0.5))
+        pts.extend([
+            (0.0, 0.5, 0.0), (-0.5, -0.5, 0.0),
+            (0.0, 0.5, 0.0), (0.0, -0.5, 0.5),
+            (0.0, 0.5, 0.0), (0.0, -0.5, -0.5)
+        ])
+        ctrl = cmds.curve(d=1, p=pts)
+        if axis == "X":
+            cmds.rotate(0, 0, -90, ctrl, r=True)
+            cmds.makeIdentity(ctrl, apply=True, t=1, r=1, s=1, n=0)
+        elif axis == "Z":
+            cmds.rotate(90, 0, 0, ctrl, r=True)
+            cmds.makeIdentity(ctrl, apply=True, t=1, r=1, s=1, n=0)
+
+    elif shape_type == "円（サークル）":
+        pts = []
+        for i in range(17):
+            a = math.radians(i * 22.5)
+            if axis == "X":
+                pts.append((0.0, math.cos(a) * 0.5, math.sin(a) * 0.5))
+            elif axis == "Z":
+                pts.append((math.cos(a) * 0.5, math.sin(a) * 0.5, 0.0))
+            else:
+                pts.append((math.cos(a) * 0.5, 0.0, math.sin(a) * 0.5))
+        ctrl = cmds.curve(d=1, p=pts)
+
+    elif shape_type == "ダイヤ（八面体）":
+        pts = [
+            (0.5, 0.0, 0.0), (0.0, 0.0, 0.5), (-0.5, 0.0, 0.0), (0.0, 0.0, -0.5), (0.5, 0.0, 0.0),
+            (0.0, 0.5, 0.0), (-0.5, 0.0, 0.0), (0.0, -0.5, 0.0), (0.5, 0.0, 0.0),
+            (0.0, 0.5, 0.0), (0.0, 0.0, 0.5), (0.0, -0.5, 0.0), (0.0, 0.0, -0.5), (0.0, 0.5, 0.0)
+        ]
+        ctrl = cmds.curve(d=1, p=pts)
+
+    else:
+        ctrl = cmds.curve(d=1, p=[
+            (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5),
+            (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5),
+            (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (0.5, 0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, -0.5, -0.5),
+            (-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5)
+        ])
+
+    shapes = cmds.listRelatives(ctrl, shapes=True, fullPath=True)
+    if shapes:
+        for shape in shapes:
+            cmds.setAttr(shape + ".overrideEnabled", 1)
+            cmds.setAttr(shape + ".overrideRGBColors", 1)
+            cmds.setAttr(shape + ".overrideColorRGB", rgb_color[0], rgb_color[1], rgb_color[2])
+    return ctrl
+
+def _make_guide_sphere_node(name, pos, radius=0.3, color=(1.0, 1.0, 0.0)):
+    sphere = cmds.polySphere(radius=radius, subdivisionsX=10, subdivisionsY=10, name=name)[0]
+    cmds.xform(sphere, ws=True, t=pos)
+    
+    # べた塗り用のランバートマテリアルを作成してアサイン
+    mat_name = "majimeru_guideMat_" + str(int(color[0]*100)) + "_" + str(int(color[1]*100)) + "_" + str(int(color[2]*100))
+    sg_name = mat_name + "_SG"
+    
+    if not cmds.objExists(mat_name):
+        mat = cmds.shadingNode("lambert", asShader=True, name=mat_name)
+        cmds.setAttr(mat + ".color", color[0], color[1], color[2])
+        cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=sg_name)
+        cmds.connectAttr(mat + ".outColor", sg_name + ".surfaceShader", force=True)
+    
+    try:
+        cmds.sets(sphere, edit=True, forceElement=sg_name)
+    except Exception:
+        pass
+        
+    return sphere
+
+def _create_guide_link_lines(guides, parent_grp=None):
+    if len(guides) < 2:
+        return []
+    line_nodes = []
+    for i in range(len(guides) - 1):
+        g1 = guides[i]
+        g2 = guides[i + 1]
+        p1 = cmds.xform(g1, q=True, ws=True, t=True)
+        p2 = cmds.xform(g2, q=True, ws=True, t=True)
+        
+        line = cmds.curve(d=1, p=[p1, p2], name="majimeru_guideLine_01")
+        shapes = cmds.listRelatives(line, shapes=True, fullPath=True) or []
+        for s in shapes:
+            cmds.setAttr(s + ".overrideEnabled", 1)
+            cmds.setAttr(s + ".overrideDisplayType", 2)
+            
+        c1 = cmds.cluster(line + ".cv[0]", name=g1.split("|")[-1] + "_cls")[1]
+        c2 = cmds.cluster(line + ".cv[1]", name=g2.split("|")[-1] + "_cls")[1]
+        cmds.setAttr(c1 + ".visibility", 0)
+        cmds.setAttr(c2 + ".visibility", 0)
+        
+        cmds.pointConstraint(g1, c1, mo=False)
+        cmds.pointConstraint(g2, c2, mo=False)
+        
+        link_grp = cmds.group(line, c1, c2, name="majimeru_guideLink_GRP")
+        if parent_grp and cmds.objExists(parent_grp):
+            cmds.parent(link_grp, parent_grp)
+        line_nodes.append(link_grp)
+    return line_nodes
+
+def connectSelectedGuidesWithLines(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        sel = cmds.ls(sl=True, long=True)
+        if len(sel) < 2:
+            cmds.error("ガイドラインで繋ぎたいガイド球を、必ず【根元（親）から先端（子）の順番】に2つ以上選択してください。")
+        _create_guide_link_lines(sel)
+        cmds.select(sel)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def _get_side_tag():
+    side_val = cmds.optionMenuGrp("sidePresetMenu", q=True, value=True)
+    if side_val == "_L":
+        return "", "_L"
+    elif side_val == "_R":
+        return "", "_R"
+    elif side_val == "L_":
+        return "L_", ""
+    elif side_val == "R_":
+        return "R_", ""
+    return "", ""
+
+def _get_finger_side_tag():
+    side_val = cmds.optionMenuGrp("fingerSidePresetMenu", q=True, value=True)
+    if side_val == "_L":
+        return "", "_L"
+    elif side_val == "_R":
+        return "", "_R"
+    elif side_val == "L_":
+        return "L_", ""
+    elif side_val == "R_":
+        return "R_", ""
+    return "", ""
+
+def autoOrientJoints(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, type="joint", long=True)
+        if not selection:
+            cmds.error("向きを整えるジョイント（根元など）を選択してください。")
+            
+        cmds.makeIdentity(selection, apply=True, t=0, r=1, s=1, n=0)
+        
+        for jnt in selection:
+            descendants = cmds.listRelatives(jnt, allDescendents=True, type="joint", fullPath=True) or []
+            if descendants:
+                descendants.reverse()
+            all_joints = [jnt] + descendants
+            
+            sec_axis = "yup"
+            children_first = cmds.listRelatives(jnt, children=True, type="joint", fullPath=True)
+            if children_first:
+                p1 = cmds.xform(jnt, q=True, ws=True, t=True)
+                p2 = cmds.xform(children_first[0], q=True, ws=True, t=True)
+                dx = abs(p2[0] - p1[0])
+                dy = abs(p2[1] - p1[1])
+                dz = abs(p2[2] - p1[2])
+                if dy >= dx and dy >= dz:
+                    sec_axis = "zup"
+            
+            for d in all_joints:
+                cmds.setAttr(d + ".rotateX", 0)
+                cmds.setAttr(d + ".rotateY", 0)
+                cmds.setAttr(d + ".rotateZ", 0)
+
+                children = cmds.listRelatives(d, children=True, type="joint", fullPath=True)
+                if children:
+                    cmds.joint(d, e=True, orientJoint="xyz", secondaryAxisOrient=sec_axis, children=False, zeroScaleOrient=True)
+                else:
+                    cmds.joint(d, e=True, orientJoint="none", zeroScaleOrient=True)
+                    cmds.setAttr(d + ".jointOrientX", 0)
+                    cmds.setAttr(d + ".jointOrientY", 0)
+                    cmds.setAttr(d + ".jointOrientZ", 0)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def zeroJointOrientAndRotate(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, type="joint", long=True)
+        if not selection:
+            cmds.error("角度を0にしたいジョイントを選択してください。")
+            
+        target_joints = list(selection)
+        for jnt in selection:
+            descendants = cmds.listRelatives(jnt, allDescendents=True, type="joint", fullPath=True)
+            if descendants:
+                target_joints.extend(descendants)
+                
+        for jnt in set(target_joints):
+            cmds.setAttr(jnt + ".rotateX", 0)
+            cmds.setAttr(jnt + ".rotateY", 0)
+            cmds.setAttr(jnt + ".rotateZ", 0)
+            cmds.setAttr(jnt + ".jointOrientX", 0)
+            cmds.setAttr(jnt + ".jointOrientY", 0)
+            cmds.setAttr(jnt + ".jointOrientZ", 0)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def toggleJointLocalAxis(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, type="joint", long=True)
+        if not selection:
+            cmds.error("軸を表示/非表示するジョイントを選択してください。")
+            
+        target_joints = list(selection)
+        for jnt in selection:
+            descendants = cmds.listRelatives(jnt, allDescendents=True, type="joint", fullPath=True)
+            if descendants:
+                target_joints.extend(descendants)
+                
+        target_joints = list(set(target_joints))
+        current_state = cmds.getAttr(target_joints[0] + ".displayLocalAxis")
+        new_state = not current_state
+        for jnt in target_joints:
+            cmds.setAttr(jnt + ".displayLocalAxis", new_state)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def spawnGuideSphere(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        g = _make_guide_sphere_node("majimeru_guideSPHERE_01", (0, 0, 0), radius=0.4, color=(1.0, 1.0, 0.0))
+        cmds.select(g)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def spawnPresetGuides(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        preset = cmds.optionMenuGrp("guidePresetMenu", q=True, value=True)
+        
+        if "背骨" in preset:
+            grp = cmds.group(em=True, name="majimeru_Spine_Guides_GRP")
+            data = [
+                ("pelvis_GUIDE", (0, 10, 0)),
+                ("spine01_GUIDE", (0, 11.5, 0)),
+                ("spine02_GUIDE", (0, 13, 0)),
+                ("chest_GUIDE", (0, 14.5, 0)),
+                ("neck_GUIDE", (0, 16, 0)),
+                ("head_GUIDE", (0, 17.5, 0))
+            ]
+            created = []
+            for name, pos in data:
+                g = _make_guide_sphere_node(name, pos, radius=0.4, color=(1.0, 0.9, 0.0))
+                cmds.parent(g, grp)
+                created.append(g)
+            _create_guide_link_lines(created, parent_grp=grp)
+            cmds.select(created)
+            
+        elif "腕" in preset:
+            grp = cmds.group(em=True, name="majimeru_Arm_L_Guides_GRP")
+            data = [
+                ("clavicle_L_GUIDE", (1.0, 14.5, 0)),
+                ("uarm_L_GUIDE", (2.5, 14.5, 0)),
+                ("elbow_L_GUIDE", (5.0, 14.5, -0.5)),
+                ("wrist_L_GUIDE", (7.5, 14.5, 0))
+            ]
+            created = []
+            for name, pos in data:
+                g = _make_guide_sphere_node(name, pos, radius=0.35, color=(1.0, 0.85, 0.0))
+                cmds.parent(g, grp)
+                created.append(g)
+            _create_guide_link_lines(created, parent_grp=grp)
+            cmds.select(created)
+
+        elif "脚" in preset:
+            grp = cmds.group(em=True, name="majimeru_Leg_L_Guides_GRP")
+            data = [
+                ("hip_L_GUIDE", (1.2, 9.5, 0)),
+                ("knee_L_GUIDE", (1.2, 5.5, 0.5)),
+                ("ankle_L_GUIDE", (1.2, 1.5, 0)),
+                ("ball_L_GUIDE", (1.2, 0.5, 1.2)),
+                ("toe_L_GUIDE", (1.2, 0.5, 2.2))
+            ]
+            created = []
+            for name, pos in data:
+                g = _make_guide_sphere_node(name, pos, radius=0.4, color=(1.0, 0.85, 0.0))
+                cmds.parent(g, grp)
+                created.append(g)
+            _create_guide_link_lines(created, parent_grp=grp)
+            cmds.select(created)
+
+        elif "指" in preset:
+            main_grp = cmds.group(em=True, name="majimeru_Fingers_L_Guides_GRP")
+            fingers = [
+                ("th", 0.8, [(8.0, 14.2, 0.8), (8.4, 14.2, 1.2), (8.8, 14.2, 1.5), (9.2, 14.2, 1.8)]),
+                ("in", 0.5, [(8.2, 14.5, 0.5), (8.8, 14.5, 0.5), (9.3, 14.5, 0.5), (9.7, 14.5, 0.5)]),
+                ("mi", 0.0, [(8.2, 14.5, 0.0), (8.9, 14.5, 0.0), (9.5, 14.5, 0.0), (10.0, 14.5, 0.0)]),
+                ("ri", -0.5, [(8.2, 14.5, -0.5), (8.8, 14.5, -0.5), (9.3, 14.5, -0.5), (9.7, 14.5, -0.5)]),
+                ("p", -1.0, [(8.1, 14.5, -1.0), (8.6, 14.5, -1.0), (9.0, 14.5, -1.0), (9.3, 14.5, -1.0)])
+            ]
+            for fname, z_off, pts in fingers:
+                f_grp = cmds.group(em=True, name="majimeru_" + fname + "_L_Guides_GRP", parent=main_grp)
+                f_guides = []
+                for idx, pos in enumerate(pts):
+                    g_name = "{}_{}_L_GUIDE".format(fname, str(idx+1).zfill(2))
+                    g = _make_guide_sphere_node(g_name, pos, radius=0.12, color=(1.0, 0.95, 0.2))
+                    cmds.parent(g, f_grp)
+                    f_guides.append(g)
+                _create_guide_link_lines(f_guides, parent_grp=f_grp)
+            cmds.select(main_grp)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def _is_valid_guide_sphere(node):
+    short = node.split("|")[-1]
+    if "guideLink_GRP" in short or "guideLine" in short or "_cls" in short:
+        return False
+    shapes = cmds.listRelatives(node, shapes=True, fullPath=True) or []
+    return len(shapes) > 0
+
+def _build_joint_chain_from_guide_list(guide_list, controlPref):
+    positions = []
+    names = []
+    for obj in guide_list:
+        pos = cmds.xform(obj, q=True, ws=True, t=True)
+        positions.append(pos)
+        short = obj.split("|")[-1]
+        if "_GUIDE" in short:
+            base = short.split("_GUIDE")[0]
+            names.append(controlPref + base + "_JNT")
+        else:
+            names.append(None)
+            
+    cmds.select(clear=True)
+    created_joints = []
+    for i, pos in enumerate(positions):
+        j_name = names[i] if names[i] else (controlPref + "guideJoint_" + str(i+1).zfill(2) + "_JNT")
+        if cmds.objExists(j_name):
+            j_name = j_name + "#"
+        jnt = cmds.joint(p=pos, name=j_name)
+        created_joints.append(jnt)
+        
+    if created_joints:
+        cmds.select(created_joints[0])
+        autoOrientJoints()
+        all_j = [created_joints[0]] + (cmds.listRelatives(created_joints[0], allDescendents=True, type="joint", fullPath=True) or [])
+        for j in all_j:
+            cmds.setAttr(j + ".rotateX", 0)
+            cmds.setAttr(j + ".rotateY", 0)
+            cmds.setAttr(j + ".rotateZ", 0)
+    return created_joints
+
+def createChainFromGuides(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, long=True)
+        if not selection:
+            cmds.error("配置したガイド球（またはグループ）を選択してください。\n※自分で置いた球を繋ぐときは、必ず【根元（親）から先端（子）の順番】にポチポチ選択してね！")
+            
+        controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+        
+        chains_to_build = []
+        nodes_to_cleanup = []
+
+        if len(selection) == 1 and not cmds.listRelatives(selection[0], shapes=True):
+            sub_children = cmds.listRelatives(selection[0], children=True, type="transform", fullPath=True) or []
+            sub_grps = [c for c in sub_children if "_Guides_GRP" in c.split("|")[-1]]
+            if sub_grps:
+                for sub_grp in sub_grps:
+                    raw_children = cmds.listRelatives(sub_grp, children=True, type="transform", fullPath=True) or []
+                    guides = [g for g in raw_children if _is_valid_guide_sphere(g)]
+                    if len(guides) >= 2:
+                        chains_to_build.append(guides)
+                nodes_to_cleanup.append(selection[0])
+            else:
+                guides = [g for g in sub_children if _is_valid_guide_sphere(g)]
+                if len(guides) >= 2:
+                    chains_to_build.append(guides)
+                    nodes_to_cleanup.append(selection[0])
+        else:
+            guides = [g for g in selection if _is_valid_guide_sphere(g)]
+            if len(guides) < 2:
+                cmds.error("ガイド球を2つ以上選んでね。\n※自分で置いた球は、必ず【根元（親）から先端（子）の順番】で選択してね！")
+            chains_to_build.append(guides)
+            nodes_to_cleanup.extend(guides)
+            for obj in guides:
+                parents = cmds.listRelatives(obj, parent=True, fullPath=True)
+                if parents and "_Guides_GRP" in parents[0]:
+                    nodes_to_cleanup.append(parents[0])
+                    top_p = cmds.listRelatives(parents[0], parent=True, fullPath=True)
+                    if top_p and "_Guides_GRP" in top_p[0]:
+                        nodes_to_cleanup.append(top_p[0])
+
+        for g in [item for sublist in chains_to_build for item in sublist]:
+            conns = cmds.listConnections(g, type="pointConstraint") or []
+            for c in conns:
+                p_list = cmds.listRelatives(c, parent=True, fullPath=True) or []
+                for p in p_list:
+                    top_link = cmds.listRelatives(p, parent=True, fullPath=True) or []
+                    for tl in top_link:
+                        if "guideLink_GRP" in tl:
+                            nodes_to_cleanup.append(tl)
+
+        root_joints = []
+        for guide_list in chains_to_build:
+            created = _build_joint_chain_from_guide_list(guide_list, controlPref)
+            if created:
+                root_joints.append(created[0])
+
+        for item in set(nodes_to_cleanup):
+            if cmds.objExists(item):
+                try:
+                    cmds.delete(item)
+                except Exception:
+                    pass
+
+        if root_joints:
+            cmds.select(root_joints)
+            cmds.confirmDialog(title="やったね！", message="ガイドから綺麗な骨ができたよ！角度もすべて0にリセットして、ガイドは自動で消去したで！", button=["OK"])
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def mirrorJointsCmd(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, type="joint", long=True)
+        if not selection:
+            cmds.error("ミラーコピーしたい「骨の根元」を選択してね。")
+            
+        for jnt in selection:
+            short_name = jnt.split("|")[-1]
+            search_str, replace_str = "_L", "_R"
+            if "_R" in short_name:
+                search_str, replace_str = "_R", "_L"
+            elif short_name.startswith("L_"):
+                search_str, replace_str = "L_", "R_"
+            elif short_name.startswith("R_"):
+                search_str, replace_str = "R_", "L_"
+                
+            cmds.mirrorJoint(jnt, mirrorYZ=True, mirrorBehavior=True, searchReplace=(search_str, replace_str))
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def quickBindSkin(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        sel = cmds.ls(sl=True, long=True)
+        if len(sel) < 2:
+            cmds.error("「骨の根元」と「モデル（メッシュ）」の両方を選択してね。")
+            
+        joints = []
+        meshes = []
+        for obj in sel:
+            if cmds.nodeType(obj) == "joint":
+                joints.append(obj)
+            else:
+                shapes = cmds.listRelatives(obj, shapes=True, type="mesh", fullPath=True)
+                if shapes:
+                    meshes.append(obj)
+                else:
+                    desc_jnts = cmds.listRelatives(obj, allDescendents=True, type="joint", fullPath=True)
+                    if desc_jnts:
+                        joints.extend(desc_jnts)
+                        
+        if not joints or not meshes:
+            cmds.error("選択範囲に「骨」と「モデル」の両方が含まれているか確認してね。")
+            
+        for m in meshes:
+            cmds.skinCluster(joints, m, toSelectedBones=False, bindMethod=0, skinMethod=0, normalizeWeights=1, maximumInfluences=4)
+        cmds.confirmDialog(title="バインド成功！", message="骨とモデルが綺麗にくっついたよ（スキニング完了）！", button=["OK"])
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def mirrorSkinWeightsCmd(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        sel = cmds.ls(sl=True, long=True)
+        if not sel:
+            cmds.error("ウェイトをミラーしたいモデルを選択してね。")
+        for obj in sel:
+            cmds.copySkinWeights(obj, mirrorMode="YZ", surfaceAssociation="closestPoint", influenceAssociation=("label", "closestJoint", "oneToOne"))
+        cmds.confirmDialog(title="完了", message="スキンウェイトを反対側に綺麗にコピーしたよ！", button=["OK"])
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def mirrorControls(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, long=True)
+        if not selection:
+            cmds.error("ミラーしたいコントローラーを選んでね。")
+            
+        def get_opp_name(n):
+            if "_L" in n:
+                return n.replace("_L", "_R")
+            elif "_R" in n:
+                return n.replace("_R", "_L")
+            elif n.startswith("L_"):
+                return "R_" + n[2:]
+            elif n.startswith("R_"):
+                return "L_" + n[2:]
+            else:
+                return n + "_mirror"
+
+        for obj in selection:
+            short_name = obj.split("|")[-1]
+            
+            target_to_dup = obj
+            parents = cmds.listRelatives(obj, parent=True, fullPath=True)
+            if short_name.endswith("_CTRL") and parents and parents[0].split("|")[-1].endswith("_GRP"):
+                target_to_dup = parents[0]
+            
+            target_short = target_to_dup.split("|")[-1]
+            opp_root_name = get_opp_name(target_short)
+            
+            if cmds.objExists(opp_root_name):
+                cmds.warning("ミラー先のオブジェクト '" + opp_root_name + "' はすでに存在します。スキップするね。")
+                continue
+                
+            dup_root = cmds.duplicate(target_to_dup, upstreamNodes=False)[0]
+            
+            old_Trash = cmds.listRelatives(dup_root, allDescendents=True, type=("constraint", "ikHandle"), fullPath=True) or []
+            if old_Trash:
+                cmds.delete(old_Trash)
+
+            mir_grp = cmds.group(dup_root, name=dup_root + "_mirror_temp")
+            cmds.xform(mir_grp, ws=True, piv=(0, 0, 0))
+            cmds.setAttr(mir_grp + ".scaleX", -1)
+            
+            cmds.parent(dup_root, world=True)
+            cmds.delete(mir_grp)
+            
+            new_root = cmds.rename(dup_root, opp_root_name)
+            
+            all_nodes = [new_root] + (cmds.listRelatives(new_root, allDescendents=True, type="transform", fullPath=True) or [])
+            all_nodes.sort(key=lambda x: x.count('|'), reverse=True)
+            
+            for node in all_nodes:
+                node_short = node.split("|")[-1]
+                if node != new_root:
+                    opp_sub_name = get_opp_name(node_short)
+                    if not cmds.objExists(opp_sub_name):
+                        node = cmds.rename(node, opp_sub_name)
+                try:
+                    cmds.select(node)
+                    cmds.makeIdentity(apply=True, t=0, r=0, s=1, n=0)
+                except Exception:
+                    pass
+                    
+            controls = [new_root] + (cmds.listRelatives(new_root, allDescendents=True, type="transform", fullPath=True) or [])
+            for ctrl in controls:
+                ctrl_short = ctrl.split("|")[-1]
+                if ctrl_short.endswith("_CTRL"):
+                    jnt_name = ctrl_short.replace("_CTRL", "_JNT")
+                    if cmds.objExists(jnt_name):
+                        cmds.parentConstraint(ctrl, jnt_name, mo=True)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def makeFKTR(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, long=True)
+        if not selection:
+            cmds.error("コントロールを作りたい骨やジョイントを選んでね。")
+            
+        target_joints = []
+        if len(selection) == 1:
+            target_joints.append(selection[0])
+            descendants = cmds.listRelatives(selection[0], allDescendents=True, type="joint", fullPath=True)
+            if descendants:
+                descendants.reverse()
+                target_joints.extend(descendants)
+        elif len(selection) == 2:
+            start_jnt = selection[0]
+            end_jnt = selection[1]
+            current = end_jnt
+            chain = [current]
+            while current != start_jnt:
+                parent = cmds.listRelatives(current, parent=True, type="joint", fullPath=True)
+                if not parent:
+                    break
+                current = parent[0]
+                chain.append(current)
+            chain.reverse()
+            if chain and chain[0] == start_jnt:
+                target_joints = chain
+            else:
+                target_joints = selection
+        else:
+            target_joints = selection
+
+        controlSize = cmds.floatSliderGrp("controlSize", q=True, v=True)
+        controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+        controlSuff = cmds.textFieldGrp("controlName", q=True, text=True)
+        rgbColor = cmds.colorSliderGrp("controlColorRGB", q=True, rgb=True)
+        useOffsetGrp = cmds.checkBoxGrp("useOffsetGrpCheck", q=True, v1=True)
+
+        for jnt in target_joints:
+            short_name = jnt.split("|")[-1]
+            base_name = short_name.replace("_JNT", "").replace("_jnt", "")
+            full_name = controlPref + base_name + controlSuff
+            if cmds.objExists(full_name):
+                cmds.error("同じ名前のコントローラーがすでに存在するよ。名前を変えてね。")
+            if useOffsetGrp and cmds.objExists(full_name + "_GRP"):
+                cmds.error("同じ名前のオフセットグループがすでに存在するよ。")
+
+        created_ctrls = {}
+        created_grps = {}
+
+        for jnt in target_joints:
+            short_name = jnt.split("|")[-1]
+            base_name = short_name.replace("_JNT", "").replace("_jnt", "")
+            
+            ctrl = _create_control(rgbColor)
+            ctrl_name = cmds.rename(ctrl, controlPref + base_name + controlSuff)
+            
+            cmds.select(ctrl_name)
+            cmds.scale(controlSize, controlSize, controlSize, r=True)
+            cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
+
+            if useOffsetGrp:
+                grp_name = cmds.group(ctrl_name, name=ctrl_name + "_GRP")
+                temp_orient = cmds.orientConstraint(jnt, grp_name)
+                cmds.delete(temp_orient)
+                temp_point = cmds.pointConstraint(jnt, grp_name)
+                cmds.delete(temp_point)
+                created_grps[jnt] = grp_name
+            else:
+                temp_orient = cmds.orientConstraint(jnt, ctrl_name)
+                cmds.delete(temp_orient)
+                temp_point = cmds.pointConstraint(jnt, ctrl_name)
+                cmds.delete(temp_point)
+                cmds.select(ctrl_name)
+                cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
+            
+            cmds.parentConstraint(ctrl_name, jnt, mo=True)
+            created_ctrls[jnt] = ctrl_name
+
+        for jnt in target_joints:
+            parent_jnt = cmds.listRelatives(jnt, parent=True, fullPath=True)
+            if parent_jnt and parent_jnt[0] in created_ctrls:
+                parent_ctrl = created_ctrls[parent_jnt[0]]
+                child_node = created_grps[jnt] if useOffsetGrp else created_ctrls[jnt]
+                if cmds.objExists(parent_ctrl) and cmds.objExists(child_node):
+                    try:
+                        cmds.parent(child_node, parent_ctrl)
+                    except Exception:
+                        pass
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def makeIKTR(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, long=True)
+        if len(selection) != 2:
+            cmds.error("IKを作るために、ジョイントを正確に2つ（根元と先端）選んでね。")
+            
+        start_joint = selection[0]
+        end_joint = selection[1]
+        base_end_joint = end_joint.split("|")[-1].replace("_JNT", "").replace("_jnt", "")
+        
+        controlSize = cmds.floatSliderGrp("controlSize", q=True, v=True)
+        controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+        controlSuff = cmds.textFieldGrp("controlName", q=True, text=True)
+        rgbColor = cmds.colorSliderGrp("controlColorRGB", q=True, rgb=True)
+        useOffsetGrp = cmds.checkBoxGrp("useOffsetGrpCheck", q=True, v1=True)
+        
+        ctrl = _create_control(rgbColor)
+        ctrl_name = cmds.rename(ctrl, controlPref + base_end_joint + controlSuff)
+        
+        cmds.select(ctrl_name)
+        cmds.scale(controlSize, controlSize, controlSize, r=True)
+        cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
+
+        if useOffsetGrp:
+            grp_name = cmds.group(ctrl_name, name=ctrl_name + "_GRP")
+            temp_orient = cmds.orientConstraint(end_joint, grp_name)
+            cmds.delete(temp_orient)
+            temp_point = cmds.pointConstraint(end_joint, grp_name)
+            cmds.delete(temp_point)
+        else:
+            temp_orient = cmds.orientConstraint(end_joint, ctrl_name)
+            cmds.delete(temp_orient)
+            temp_point = cmds.pointConstraint(end_joint, ctrl_name)
+            cmds.delete(temp_point)
+            cmds.select(ctrl_name)
+            cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
+        
+        ik_handle, ik_effector = cmds.ikHandle(
+            startJoint=start_joint,
+            endEffector=end_joint,
+            sol="ikRPsolver"
+        )
+        short_start = start_joint.split("|")[-1]
+        ik_handle_name = cmds.rename(ik_handle, short_start + "_ikHandle")
+        cmds.parent(ik_handle_name, ctrl_name)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def makeMeshFitCtrl(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        sel = cmds.ls(sl=True, flatten=True, long=True)
+        if not sel:
+            cmds.error("コントローラーを合わせたいモデルや頂点を選んでね。")
+            
+        bbox = cmds.xform(sel, q=True, ws=True, boundingBox=True)
+        if not bbox:
+            cmds.error("選択範囲からサイズを計算できなかったよ。")
+            
+        center_x = (bbox[0] + bbox[3]) / 2.0
+        center_y = (bbox[1] + bbox[4]) / 2.0
+        center_z = (bbox[2] + bbox[5]) / 2.0
+        
+        size_x = max(bbox[3] - bbox[0], 0.1)
+        size_y = max(bbox[4] - bbox[1], 0.1)
+        size_z = max(bbox[5] - bbox[2], 0.1)
+
+        controlSize = cmds.floatSliderGrp("controlSize", q=True, v=True)
+        controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+        controlSuff = cmds.textFieldGrp("controlName", q=True, text=True)
+        rgbColor = cmds.colorSliderGrp("controlColorRGB", q=True, rgb=True)
+        useOffsetGrp = cmds.checkBoxGrp("useOffsetGrpCheck", q=True, v1=True)
+        
+        base_name = cmds.ls(sel[0], o=True)[0].split("|")[-1]
+        if "." in base_name:
+            base_name = base_name.split(".")[0]
+
+        ctrl = _create_control(rgbColor)
+        ctrl_name = cmds.rename(ctrl, controlPref + base_name + "_Fit" + controlSuff)
+        
+        cmds.select(ctrl_name)
+        cmds.scale(size_x * controlSize, size_y * controlSize, size_z * controlSize, r=True)
+        cmds.makeIdentity(apply=True, t=1, r=1, s=1, n=0)
+        
+        if useOffsetGrp:
+            grp_name = cmds.group(ctrl_name, name=ctrl_name + "_GRP")
+            cmds.xform(grp_name, ws=True, t=(center_x, center_y, center_z))
+        else:
+            cmds.xform(ctrl_name, ws=True, t=(center_x, center_y, center_z))
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def applyColorPreset(*args):
+    preset_name = cmds.optionMenuGrp("colorPresetMenu", q=True, value=True)
+    color_dict = {
+        "青": (0.2, 0.6, 1.0),
+        "ピンク": (1.0, 0.5, 0.8),
+        "赤": (1.0, 0.2, 0.2),
+        "黄": (1.0, 0.9, 0.2),
+        "緑": (0.2, 0.8, 0.4),
+        "白": (1.0, 1.0, 1.0),
+        "黒": (0.2, 0.2, 0.2)
+    }
+    if preset_name in color_dict:
+        rgb = color_dict[preset_name]
+        cmds.colorSliderGrp("controlColorRGB", e=True, rgb=rgb)
+
+def applyColorToSelected(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, long=True)
+        if not selection:
+            cmds.error("カラーを塗りたいオブジェクトをえらんでね。")
+            
+        rgbColor = cmds.colorSliderGrp("applyColorRGB", q=True, rgb=True)
+        
+        for obj in selection:
+            shapes = cmds.listRelatives(obj, shapes=True, fullPath=True)
+            if not shapes:
+                if cmds.nodeType(obj) in ['nurbsCurve', 'mesh', 'joint']:
+                    shapes = [obj]
+                else:
+                    continue
+                
+            for shape in shapes:
+                cmds.setAttr(shape + ".overrideEnabled", 1)
+                cmds.setAttr(shape + ".overrideRGBColors", 1)
+                cmds.setAttr(shape + ".overrideColorRGB", rgbColor[0], rgbColor[1], rgbColor[2])
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def renameJoints(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, long=True)
+        if not selection:
+            cmds.error("名前を変えたいジョイントを選んでね。")
+            
+        selected_name = cmds.optionMenuGrp("renamePresetMenu", q=True, value=True)
+        controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+        prefix_side, suffix_side = _get_side_tag()
+        
+        if len(selection) == 1:
+            new_name = controlPref + prefix_side + selected_name + suffix_side + "_JNT"
+            cmds.rename(selection[0], new_name)
+        else:
+            for i, obj in enumerate(selection):
+                new_name = controlPref + prefix_side + selected_name + "_" + str(i+1).zfill(2) + suffix_side + "_JNT"
+                cmds.rename(obj, new_name)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def renameFingerJoints(*args):
+    cmds.undoInfo(openChunk=True)
+    try:
+        selection = cmds.ls(sl=True, long=True)
+        if not selection:
+            cmds.error("指の根元のジョイントを選んでね。")
+            
+        finger_name = cmds.optionMenuGrp("fingerPresetMenu", q=True, value=True)
+        controlPref = cmds.textFieldGrp("controlPrefix", q=True, text=True)
+        prefix_side, suffix_side = _get_finger_side_tag()
+        
+        for sel in selection:
+            chain = [sel]
+            current = sel
+            while True:
+                children = cmds.listRelatives(current, children=True, type='joint', fullPath=True)
+                if children and len(children) > 0:
+                    current = children[0]
+                    chain.append(current)
+                else:
+                    break
+            
+            rename_pairs = [(obj, i) for i, obj in enumerate(chain)]
+            rename_pairs.reverse()
+            
+            for obj, i in rename_pairs:
+                new_name = controlPref + prefix_side + finger_name + "_" + str(i+1).zfill(2) + suffix_side + "_JNT"
+                cmds.rename(obj, new_name)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+def createFKControls():
+    window_name = "majimeru_FK_auto"
+    if cmds.window(window_name, exists=True):
+        cmds.deleteUI(window_name, window=True)
+    
+    cmds.window(window_name, title="誰でもリグ作れるよツール", widthHeight=(840, 780), bgc=(0.25, 0.25, 0.27))
+    
+    cmds.scrollLayout(childResizable=True)
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=(410, 410), columnAttach=[(1, 'both', 10), (2, 'both', 10)])
+    
+    # --- 左カラム ---
+    cmds.columnLayout(adj=True, rowSpacing=8)
+    
+    cmds.text(label="✨ リギングが苦手なあなたへ ✨\nこの順番どおりにやれば絶対できるよ！それじゃあ骨、作ろうか！", align='center', font='boldLabelFont', height=36, bgc=(0.32, 0.32, 0.35))
+    cmds.separator(style='none', height=4)
+
+    cmds.text(label="【Step 1】部位のガイド球を一括配置", align='left', font='boldLabelFont')
+    
+    cmds.optionMenuGrp("guidePresetMenu", label="つくりたい部位", cw2=(90, 250))
+    for gname in [
+        "🦴 背骨〜頭のガイドセット (6個)",
+        "💪 左腕のガイドセット (4個)",
+        "🦵 左脚のガイドセット (5個)",
+        "🖐️ 左手5本指のガイドセット (20個)"
+    ]:
+        cmds.menuItem(label=gname)
+
+    cmds.button(
+        label="① 選んだ部位のガイド球を画面に出す",
+        height=28,
+        bgc=[0.95, 0.75, 0.1],
+        command=spawnPresetGuides
+    )
+    cmds.button(
+        label="✨【自由配置】好きな場所にガイド球を1個追加する",
+        height=24,
+        bgc=[0.3, 0.7, 0.9],
+        command=spawnGuideSphere
+    )
+    cmds.button(
+        label="🔗 追加した球同士を【根元→先端】の順に選んで線を引く",
+        height=24,
+        bgc=[0.25, 0.6, 0.75],
+        command=connectSelectedGuidesWithLines
+    )
+
+    cmds.separator(style='in', height=6)
+
+    cmds.text(label="【Step 2】位置を合わせて骨を一撃作成", align='left', font='boldLabelFont')
+    cmds.text(label="💡 自分で置いた球を繋ぐときは【根元（親）→先端（子）】の順に選んでね！", align='left', font='smallPlainLabelFont')
+    cmds.button(
+        label="② ガイド球（またはグループ）を選んで骨を作る",
+        height=30,
+        bgc=[0.2, 0.8, 0.6],
+        command=createChainFromGuides
+    )
+    cmds.button(
+        label="③ 反対側へワンクリックミラーコピー",
+        height=26,
+        bgc=[0.3, 0.6, 0.8],
+        command=mirrorJointsCmd
+    )
+
+    cmds.separator(style='in', height=10)
+
+    cmds.text(label="ジョイントのリネーム（手動用）", align='left', font='boldLabelFont')
+    
+    cmds.optionMenuGrp("renamePresetMenu", label="ジョイント名", cw2=(90, 250))
+    for jname in ["root", "pelvis", "clavicle", "uarm", "elbow", "wrist", "hip", "knee", "ankle", "ball", "toe", "spine", "spine01", "spine02", "chest", "neck", "head", "twist"]:
+        cmds.menuItem(label=jname)
+
+    cmds.optionMenuGrp("sidePresetMenu", label="左右（サイド）", cw2=(90, 250))
+    for sname in ["なし", "_L", "_R", "L_", "R_"]:
+        cmds.menuItem(label=sname)
+    
+    cmds.button(
+        label="選択したジョイント名を上で選んでこのボタン押して",
+        height=28,
+        bgc=[0.8, 0.4, 0.9],
+        command=renameJoints
+    )
+    
+    cmds.separator(style='in', height=10)
+    
+    cmds.text(label="指のリネーム（ th=親指 / in=人差し指 / mi=中指 / ri=薬指 / p=小指 ）", align='left', font='boldLabelFont')
+    
+    cmds.optionMenuGrp("fingerPresetMenu", label="指の名前", cw2=(90, 250))
+    for fname in ["th", "in", "mi", "ri", "p"]:
+        cmds.menuItem(label=fname)
+
+    cmds.optionMenuGrp("fingerSidePresetMenu", label="指の左右", cw2=(90, 250))
+    for sname in ["なし", "_L", "_R", "L_", "R_"]:
+        cmds.menuItem(label=sname)
+    
+    cmds.button(
+        label="根元だけ選択して指を一括リネーム",
+        height=28,
+        bgc=[0.9, 0.5, 0.7],
+        command=renameFingerJoints
+    )
+
+    cmds.separator(style='in', height=10)
+
+    cmds.text(label="ジョイントの軸（向き）の自動整列", align='left', font='boldLabelFont')
+
+    cmds.button(
+        label="選択した根元から骨の向き（ローカル軸）を自動で正す",
+        height=28,
+        bgc=[0.95, 0.6, 0.2],
+        command=autoOrientJoints
+    )
+    cmds.button(
+        label="選択した骨の角度数値（Rotate / Orient）を全て0にする",
+        height=26,
+        bgc=[0.85, 0.5, 0.3],
+        command=zeroJointOrientAndRotate
+    )
+    cmds.button(
+        label="ローカル軸（XYZ）の表示 / 非表示を切り替え",
+        height=26,
+        bgc=[0.7, 0.7, 0.7],
+        command=toggleJointLocalAxis
+    )
+
+    cmds.setParent('..') # 左カラム終了
+    
+    # --- 右カラム ---
+    cmds.columnLayout(adj=True, rowSpacing=8)
+    
+    cmds.text(label="FKコントロール作成", align='left', font='boldLabelFont')
+    
+    cmds.optionMenuGrp("controlShapeMenu", label="コントロール形状", cw2=(100, 190))
+    for sname in ["正六面体（キューブ）", "球（スフィア）", "円錐（コーン）", "円（サークル）", "ダイヤ（八面体）"]:
+        cmds.menuItem(label=sname)
+
+    cmds.optionMenuGrp("controlAxisMenu", label="形状の向き（軸）", cw2=(100, 190))
+    for aname in ["X軸（骨の標準）", "Y軸", "Z軸"]:
+        cmds.menuItem(label=aname)
+
+    cmds.floatSliderGrp(
+        "controlSize",
+        label="サイズ",
+        field=True,
+        cw3=(100, 50, 140),
+        minValue=0.01,
+        maxValue=50.0,
+        fieldMinValue=0.1,
+        fieldMaxValue=50,
+        value=1.0
+    )
+    
+    cmds.colorSliderGrp(
+        "controlColorRGB",
+        label="作成時カラー",
+        cw2=(100, 50),
+        rgb=(0.3, 0.7, 1.0)
+    )
+    
+    cmds.optionMenuGrp(
+        "colorPresetMenu",
+        label="カラーリスト",
+        cw2=(100, 190),
+        changeCommand=applyColorPreset
+    )
+    for cname in ["青", "ピンク", "赤", "黄", "緑", "白", "黒"]:
+        cmds.menuItem(label=cname)
+    
+    cmds.textFieldGrp(
+        "controlPrefix",
+        label="コントロール接頭辞",
+        cw2=(100, 190),
+        text=""
+    )
+    
+    cmds.textFieldGrp(
+        "controlName",
+        label="コントロール接尾辞",
+        cw2=(100, 190),
+        text="_CTRL"
+    )
+    
+    cmds.checkBoxGrp(
+        "useOffsetGrpCheck",
+        label="オフセット階層：",
+        label1="オフセットグループ（_GRP）を挟む",
+        cw2=(100, 190),
+        v1=False
+    )
+    
+    cmds.button(
+        label="FKコントローラを作る",
+        height=30,
+        bgc=[1.0, 0.85, 0.0],
+        command=makeFKTR
+    )
+
+    cmds.separator(style='in', height=10)
+
+    cmds.text(label="コントローラーのミラー（反転コピー）", align='left', font='boldLabelFont')
+
+    cmds.button(
+        label="選択したコントローラーを反対側にミラーコピー",
+        height=28,
+        bgc=[0.4, 0.8, 0.9],
+        command=mirrorControls
+    )
+    
+    cmds.separator(style='in', height=10)
+
+    cmds.text(label="IK・形状合わせツール", align='left', font='boldLabelFont')
+    
+    cmds.button(
+        label="腕用のIKコントローラーを作る",
+        height=28,
+        bgc=[0.2, 0.7, 1.0],
+        command=makeIKTR
+    )
+    
+    cmds.button(
+        label="選択した形状（頂点など）に合わせてコントローラを作る",
+        height=28,
+        bgc=[0.3, 0.8, 0.4],
+        command=makeMeshFitCtrl
+    )
+
+    cmds.separator(style='in', height=10)
+
+    cmds.text(label="スキニング（骨とモデルのバインド）", align='left', font='boldLabelFont')
+
+    cmds.button(
+        label="選択した「骨」と「モデル」を一発バインド（スキニング）",
+        height=28,
+        bgc=[0.9, 0.4, 0.4],
+        command=quickBindSkin
+    )
+    cmds.button(
+        label="選択モデルのスキンウェイトを左から右へミラー",
+        height=26,
+        bgc=[0.7, 0.4, 0.5],
+        command=mirrorSkinWeightsCmd
+    )
+
+    cmds.separator(style='in', height=10)
+
+    cmds.text(label="カラー変更・適用", align='left', font='boldLabelFont')
+
+    cmds.button(
+        label="選択したオブジェクトにカラーを適用",
+        height=28,
+        bgc=[0.5, 0.5, 0.5],
+        command=applyColorToSelected
+    )
+    
+    cmds.colorSliderGrp(
+        "applyColorRGB",
+        label="適用カラー",
+        cw2=(90, 50),
+        rgb=(0.3, 0.7, 1.0)
+    )
+
+    cmds.setParent('..') # 右カラム終了
+    cmds.setParent('..') # rowLayout終了
+    
+    cmds.separator(style='none', height=10)
+    cmds.showWindow(window_name)
+
+createFKControls()

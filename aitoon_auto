@@ -1,8 +1,8 @@
 import maya.cmds as cmds
 
-class DirectToonRampConverter(object):
+class AiToonAllInOneWindow(object):
     def __init__(self):
-        self.window_name = "DirectToonRampWin"
+        self.window_name = "AiToonAllInOneWin"
         self.build_ui()
 
     def build_ui(self):
@@ -11,21 +11,21 @@ class DirectToonRampConverter(object):
 
         self.window = cmds.window(
             self.window_name, 
-            title="aiToon + Ramp Direct Converter", 
-            widthHeight=(380, 280),
+            title="aiToon All-in-One Converter", 
+            widthHeight=(380, 320),
             sizeable=True
         )
         
         cmds.columnLayout(adjustableColumn=True, rowSpacing=10, columnAttach=('both', 12))
         cmds.separator(height=8, style='none')
         cmds.text(
-            label="選択モデルを aiToon に変換し、\n輪郭線と 2階調Ramp（トーンマップ）を確実に適用します。", 
+            label="選択中のモデルを aiToon に変換し、\n輪郭線・Ramp（影）・色を一括で適用します。", 
             align='left'
         )
         cmds.separator(height=4, style='in')
 
         self.width_slider = cmds.floatSliderGrp(
-            label="輪郭線の太さ (px): ", field=True, minValue=0.1, maxValue=10.0, value=2.0, step=0.1,
+            label="線の太さ (px): ", field=True, minValue=0.1, maxValue=10.0, value=2.0, step=0.1,
             columnWidth3=(110, 50, 150)
         )
         self.shadow_val_slider = cmds.floatSliderGrp(
@@ -36,10 +36,14 @@ class DirectToonRampConverter(object):
             label="影の境界位置: ", field=True, minValue=0.01, maxValue=0.99, value=0.5, step=0.05,
             columnWidth3=(110, 50, 150)
         )
+        self.edge_color_slider = cmds.colorSliderGrp(
+            label="輪郭線の色: ", rgb=(0.0, 0.0, 0.0),
+            columnWidth3=(110, 50, 150)
+        )
 
         cmds.separator(height=6, style='in')
         cmds.button(
-            label="aiToon ＋ 輪郭線 ＋ Rampを適用", 
+            label="選択モデルを aiToon に変換する", 
             height=45, 
             backgroundColor=(0.25, 0.45, 0.35),
             command=self.run_conversion
@@ -68,15 +72,15 @@ class DirectToonRampConverter(object):
 
         selection = cmds.ls(selection=True, long=True)
         if not selection:
-            cmds.warning("モデルを選択してください。")
+            cmds.warning("家のモデル（メッシュ）を選択してください。")
             return
 
         shapes = cmds.ls(selection, dag=True, leaf=True, type=['mesh', 'nurbsSurface'], noIntermediate=True, long=True)
         if not shapes:
-            cmds.warning("メッシュが見つかりません。")
+            cmds.warning("有効なメッシュが見つかりません。")
             return
 
-        # 1. メイン画面（Beauty）に輪郭線が出るように設定
+        # 輪郭線フィルター設定
         cmds.setAttr('defaultArnoldFilter.ai_translator', 'contour', type='string')
         width_val = cmds.floatSliderGrp(self.width_slider, query=True, value=True)
         if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
@@ -84,6 +88,7 @@ class DirectToonRampConverter(object):
 
         shadow_val = cmds.floatSliderGrp(self.shadow_val_slider, query=True, value=True)
         shadow_pos = cmds.floatSliderGrp(self.shadow_pos_slider, query=True, value=True)
+        edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
 
         sgs = set()
         for shape in shapes:
@@ -97,24 +102,28 @@ class DirectToonRampConverter(object):
             old_mat = mats[0] if mats else None
             assigned_members = cmds.sets(sg, query=True) or []
 
-            base_name = old_mat if old_mat else "model"
+            base_name = old_mat if old_mat else "house"
             toon_mat = cmds.shadingNode('aiToon', asShader=True, name=f"{base_name}_aiToon")
             toon_sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=f"{toon_mat}SG")
             cmds.connectAttr(f"{toon_mat}.outColor", f"{toon_sg}.surfaceShader", force=True)
 
-            # 輪郭線の有効化とプレフィックスクリア
+            # 輪郭線・ノイズ防止設定
             if cmds.attributeQuery('enable', node=toon_mat, exists=True):
                 cmds.setAttr(f"{toon_mat}.enable", True)
             if cmds.attributeQuery('enableSilhouette', node=toon_mat, exists=True):
                 cmds.setAttr(f"{toon_mat}.enableSilhouette", True)
             if cmds.attributeQuery('aov_prefix', node=toon_mat, exists=True):
                 cmds.setAttr(f"{toon_mat}.aov_prefix", "", type="string")
-
-            # ノイズ防止設定（間接光とスペキュラをオフ）
             if cmds.attributeQuery('indirectDiffuse', node=toon_mat, exists=True):
                 cmds.setAttr(f"{toon_mat}.indirectDiffuse", 0.0)
             if cmds.attributeQuery('specular', node=toon_mat, exists=True):
                 cmds.setAttr(f"{toon_mat}.specular", 0.0)
+
+            # 線の色適用
+            if cmds.attributeQuery('edgeColor', node=toon_mat, exists=True):
+                cmds.setAttr(f"{toon_mat}.edgeColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+            if cmds.attributeQuery('silhouetteColor', node=toon_mat, exists=True):
+                cmds.setAttr(f"{toon_mat}.silhouetteColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
 
             # 色・テクスチャの継承
             for attr in ['baseColor', 'color', 'outColor', 'surfaceColor']:
@@ -131,36 +140,32 @@ class DirectToonRampConverter(object):
                         pass
                     break
 
-            # ★ Base Tonemap に 2階調 Ramp ノードを確実に作成して接続
+            # Rampの作成と接続
             ramp = cmds.shadingNode('ramp', asTexture=True, name=f"{toon_mat}_tonemapRamp")
             p2d = cmds.shadingNode('place2dTexture', asUtility=True, name=f"{ramp}_p2d")
             cmds.connectAttr(f"{p2d}.outUV", f"{ramp}.uvCoord", force=True)
             cmds.connectAttr(f"{p2d}.outUvFilterSize", f"{ramp}.uvFilterSize", force=True)
-            
-            # パキッとしたアニメ調（Constant）に設定
             cmds.setAttr(f"{ramp}.interpolation", 0)
             cmds.setAttr(f"{ramp}.colorEntryList[0].position", 0.0)
             cmds.setAttr(f"{ramp}.colorEntryList[0].color", shadow_val, shadow_val, shadow_val, type="double3")
             cmds.setAttr(f"{ramp}.colorEntryList[1].position", shadow_pos)
             cmds.setAttr(f"{ramp}.colorEntryList[1].color", 1.0, 1.0, 1.0, type="double3")
             
-            # 余分なカラーエントリの削除
             indices = cmds.getAttr(f"{ramp}.colorEntryList", multiIndices=True) or []
             for idx in indices:
                 if idx > 1:
                     cmds.removeMultiInstance(f"{ramp}.colorEntryList[{idx}]", b=True)
             
-            # aiToon の baseTonemap へ接続
             cmds.connectAttr(f"{ramp}.outColor", f"{toon_mat}.baseTonemap", force=True)
 
-            # モデルへの割り当て
+            # アサイン
             if assigned_members:
                 cmds.sets(assigned_members, edit=True, forceElement=toon_sg)
             else:
                 for shape in shapes:
                     cmds.sets(shape, edit=True, forceElement=toon_sg)
 
-            # 古いノードのクリーンアップ
+            # クリーンアップ
             if sg not in ['initialShadingGroup', 'initialParticleSE']:
                 try: cmds.delete(sg)
                 except: pass
@@ -170,6 +175,6 @@ class DirectToonRampConverter(object):
 
             converted_count += 1
 
-        cmds.inViewMessage(amg=f'<hl>aiToon ＋ Ramp変換完了</hl> ({converted_count} 個)', pos='midCenter', fade=True)
+        cmds.inViewMessage(amg=f'<hl>家のモデルを aiToon に変換しました</hl> ({converted_count} 個)', pos='midCenter', fade=True)
 
-DirectToonRampConverter()
+AiToonAllInOneWindow()

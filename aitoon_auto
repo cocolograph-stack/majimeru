@@ -11,15 +11,15 @@ class AiToonConverterWindow(object):
 
         self.window = cmds.window(
             self.window_name, 
-            title="aiToon Converter + AOV Splitter", 
-            widthHeight=(410, 580),
+            title="aiToon Converter + Hand-drawn Noise Toggle", 
+            widthHeight=(420, 780),
             sizeable=True
         )
         
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=8, columnAttach=('both', 12))
-        cmds.separator(height=8, style='none')
+        cmds.columnLayout(adjustableColumn=True, rowSpacing=7, columnAttach=('both', 12))
+        cmds.separator(height=6, style='none')
         cmds.text(
-            label="元の色を保持して aiToon に変換し、\n2階調Ramp・粒粒対策・輪郭線・AOV分離を一括設定します。", 
+            label="aiToon変換・2階調Ramp・輪郭線・手描き風ノイズ切替・AOV分離を一括管理します。", 
             align='left'
         )
         cmds.separator(height=4, style='in')
@@ -45,8 +45,8 @@ class AiToonConverterWindow(object):
 
         cmds.separator(height=6, style='in')
 
-        # --- 2. Contour (輪郭線) 設定 ---
-        cmds.text(label="【2. 輪郭線 (Edge / Contour) 設定】", align='left', font="boldLabelFont")
+        # --- 2. Contour (輪郭線・手描きノイズ) 設定 ---
+        cmds.text(label="【2. 輪郭線 ＆ 手描き風ノイズ設定】", align='left', font="boldLabelFont")
         self.enable_contour_cb = cmds.checkBox(
             label="輪郭線を有効化する", 
             value=True,
@@ -64,11 +64,62 @@ class AiToonConverterWindow(object):
             columnWidth3=(135, 50, 150),
             changeCommand=self.update_existing_contours
         )
+
+        # ★ 手描き風ノイズの「入れる / 入れない」切り替えボタン
+        cmds.separator(height=4, style='none')
+        cmds.text(label="【手描き風ノイズ（線のガタガタ・強弱）】", align='left', font="boldLabelFont")
+        
+        self.noise_toggle_layout = cmds.rowLayout(numberOfColumns=2, columnWidth2=(190, 190), columnAttach=[(1, 'both', 2), (2, 'both', 2)])
+        self.noise_on_btn = cmds.button(
+            label="手描きノイズを「入れる」", 
+            height=35, 
+            backgroundColor=(0.25, 0.4, 0.5),
+            command=lambda *args: self.set_noise_state(True)
+        )
+        self.noise_off_btn = cmds.button(
+            label="手描きノイズを「入れない」", 
+            height=35, 
+            backgroundColor=(0.4, 0.25, 0.25),
+            command=lambda *args: self.set_noise_state(False)
+        )
+        cmds.setParent('..') # rowLayoutを抜ける
+
+        self.noise_amp_slider = cmds.floatSliderGrp(
+            label="ノイズの揺らぎ強さ: ", 
+            field=True, minValue=0.0, maxValue=1.0, value=0.25, step=0.05,
+            columnWidth3=(135, 50, 150),
+            changeCommand=self.update_existing_contours
+        )
+        self.noise_freq_slider = cmds.floatSliderGrp(
+            label="ノイズの細かさ(周波数): ", 
+            field=True, minValue=1.0, maxValue=50.0, value=15.0, step=1.0,
+            columnWidth3=(135, 50, 150),
+            changeCommand=self.update_existing_contours
+        )
+
+        # 輪郭線の色設定
         self.edge_color_slider = cmds.colorSliderGrp(
-            label="輪郭線の色: ", 
+            label="基本の輪郭線の色: ", 
             rgb=(0.0, 0.0, 0.0),
             columnWidth3=(135, 50, 150),
             changeCommand=self.update_existing_contours
+        )
+        self.iro_trace_cb = cmds.checkBox(
+            label="自動「色トレス」にする（元の色を暗くした線にする）", 
+            value=False,
+            changeCommand=self.update_existing_contours
+        )
+        self.iro_trace_mult_slider = cmds.floatSliderGrp(
+            label="色トレスの明るさ倍率: ", 
+            field=True, minValue=0.0, maxValue=1.0, value=0.35, step=0.05,
+            columnWidth3=(135, 50, 150),
+            changeCommand=self.update_existing_contours
+        )
+        cmds.button(
+            label="選択中のモデルだけ「基本の輪郭線の色」を個別適用", 
+            height=30, 
+            backgroundColor=(0.45, 0.35, 0.25),
+            command=self.apply_color_to_selected_only
         )
 
         cmds.separator(height=6, style='in')
@@ -78,7 +129,6 @@ class AiToonConverterWindow(object):
         self.split_aov_cb = cmds.checkBox(
             label="Beauty(中身)から線を消し、専用AOVに輪郭線を分離する", 
             value=True,
-            annotation="ONにするとBeautyは塗りだけになり、指定したAOVに輪郭線だけがアルファ付きで出力されます。",
             changeCommand=self.update_existing_contours
         )
         self.aov_name_field = cmds.textFieldGrp(
@@ -88,29 +138,42 @@ class AiToonConverterWindow(object):
         )
         self.merge_aov_cb = cmds.checkBox(
             label="マルチチャンネルEXRではなく個別ファイルで書き出す", 
-            value=True,
-            annotation="After Effectsで扱いやすいよう、mergeAOVsをOFFにしてBeautyと線画を別ファイルで出力する設定にします。"
+            value=True
         )
 
         cmds.separator(height=8, style='in')
 
         # --- 実行ボタン ---
         cmds.button(
-            label="選択モデルを aiToon に置き換え（色＋Ramp＋輪郭線＋AOV）", 
-            height=45, 
+            label="1. 選択モデルを aiToon に新規置き換え", 
+            height=42, 
             backgroundColor=(0.25, 0.45, 0.35),
             command=self.run_conversion
         )
-
-        cmds.separator(height=4, style='none')
         cmds.button(
-            label="既存シーンに AOV分離・輪郭線・粒粒対策 を一括適用", 
-            height=38, 
+            label="2. 既存シーン全体に 設定を一括反映", 
+            height=36, 
             backgroundColor=(0.35, 0.35, 0.5),
             command=self.apply_all_scene_fixes
         )
-        cmds.separator(height=8, style='none')
+        cmds.separator(height=6, style='none')
         cmds.showWindow(self.window)
+
+    def set_noise_state(self, state):
+        """「入れる」「入れない」ボタンが押されたときの処理"""
+        noise_amp = cmds.floatSliderGrp(self.noise_amp_slider, query=True, value=True)
+        noise_freq = cmds.floatSliderGrp(self.noise_freq_slider, query=True, value=True)
+
+        toons = cmds.ls(type='aiToon') or []
+        for t in toons:
+            self.apply_hand_drawn_noise_to_toon(t, state, noise_amp, noise_freq)
+
+        status_text = "入れる（有効化）" if state else "入れない（無効化）"
+        cmds.inViewMessage(
+            amg=f'<hl>手描き風ノイズ</hl> を「{status_text}」にしました ({len(toons)} 個)', 
+            pos='midCenter', 
+            fade=True
+        )
 
     def ensure_arnold_loaded(self):
         if not cmds.pluginInfo('mtoa', query=True, loaded=True):
@@ -128,11 +191,9 @@ class AiToonConverterWindow(object):
         return True
 
     def setup_aov_and_filters(self, enable_contour, split_aov, aov_name, width, separate_files):
-        """Beautyと輪郭線AOVのフィルター構成をセットアップする"""
         if not cmds.objExists('defaultArnoldFilter'):
             return
 
-        # 個別ファイル書き出し設定 (mergeAOVs を OFF にするとフォルダ・ファイルが分かれてAEで読みやすい)
         if cmds.objExists('defaultArnoldDriver') and separate_files:
             if cmds.attributeQuery('mergeAOVs', node='defaultArnoldDriver', exists=True):
                 cmds.setAttr('defaultArnoldDriver.mergeAOVs', False)
@@ -142,12 +203,10 @@ class AiToonConverterWindow(object):
             return
 
         if split_aov:
-            # 1. Beauty(中身)には輪郭線が出ないようにメインフィルターを gaussian に戻す
             cmds.setAttr('defaultArnoldFilter.ai_translator', 'gaussian', type='string')
             if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
                 cmds.setAttr('defaultArnoldFilter.width', 2.0)
 
-            # 2. 輪郭線用のAOVを作成・取得
             aov_node = f"aiAOV_{aov_name}"
             if not cmds.objExists(aov_node):
                 try:
@@ -159,13 +218,11 @@ class AiToonConverterWindow(object):
                     print(f"AOV creation failed: {e}")
                     return
             
-            # AOVを有効化 & RGBA型に設定
             if cmds.attributeQuery('enabled', node=aov_node, exists=True):
                 cmds.setAttr(f"{aov_node}.enabled", True)
             if cmds.attributeQuery('type', node=aov_node, exists=True):
-                cmds.setAttr(f"{aov_node}.type", 6) # 6 = RGBA
+                cmds.setAttr(f"{aov_node}.type", 6)
 
-            # 3. 輪郭線AOV専用の contour フィルターを作成して接続
             contour_filter = "aiToon_contourFilter"
             if not cmds.objExists(contour_filter):
                 contour_filter = cmds.createNode('aiAOVFilter', name=contour_filter, skipSelect=True)
@@ -174,33 +231,127 @@ class AiToonConverterWindow(object):
             if cmds.attributeQuery('width', node=contour_filter, exists=True):
                 cmds.setAttr(f"{contour_filter}.width", width)
 
-            # AOVに専用コンターフィルターとデフォルトドライバーを接続
             cmds.connectAttr(f"{contour_filter}.message", f"{aov_node}.outputs[0].filter", force=True)
             if cmds.objExists('defaultArnoldDriver'):
                 cmds.connectAttr("defaultArnoldDriver.message", f"{aov_node}.outputs[0].driver", force=True)
-
         else:
-            # AOV分離しない場合はBeautyに直接輪郭線を出す
             cmds.setAttr('defaultArnoldFilter.ai_translator', 'contour', type='string')
             if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
                 cmds.setAttr('defaultArnoldFilter.width', width)
 
-    def apply_toon_edge_settings(self, toon_mat, enable, angle_thresh, edge_rgb, split_aov, aov_name):
+    def apply_hand_drawn_noise_to_toon(self, toon_mat, use_noise, noise_amp, noise_freq):
+        scale_attr = f"{toon_mat}.edgeWidthScale"
+        conns = cmds.listConnections(scale_attr, source=True, destination=False, plugs=True) or []
+
+        if not use_noise:
+            for c in conns:
+                try:
+                    cmds.disconnectAttr(c, scale_attr)
+                except Exception:
+                    pass
+            cmds.setAttr(scale_attr, 1.0)
+            return
+
+        noise_node = f"{toon_mat}_handDrawnNoise"
+        remap_node = f"{toon_mat}_noiseRemap"
+
+        if not cmds.objExists(noise_node):
+            noise_node = cmds.shadingNode('aiNoise', asTexture=True, name=noise_node)
+            cmds.setAttr(f"{noise_node}.octaves", 2)
+            cmds.setAttr(f"{noise_node}.distortion", 0.5)
+
+        if not cmds.objExists(remap_node):
+            remap_node = cmds.shadingNode('aiRange', asUtility=True, name=remap_node)
+            cmds.connectAttr(f"{noise_node}.outColorR", f"{remap_node}.input", force=True)
+
+        min_val = max(0.01, 1.0 - noise_amp)
+        max_val = 1.0 + noise_amp
+        cmds.setAttr(f"{remap_node}.outputMin", min_val)
+        cmds.setAttr(f"{remap_node}.outputMax", max_val)
+        cmds.setAttr(f"{noise_node}.scale", noise_freq, noise_freq, noise_freq, type="double3")
+
+        target_conn = f"{remap_node}.outValue"
+        if not any(target_conn in c for c in conns):
+            try:
+                cmds.connectAttr(target_conn, scale_attr, force=True)
+            except Exception as e:
+                print(f"Failed to connect noise to edgeWidthScale: {e}")
+
+    def apply_edge_color_to_material(self, toon_mat, edge_rgb, use_iro_trace, iro_mult):
+        for attr in ['edgeColor', 'silhouetteColor']:
+            if cmds.attributeQuery(attr, node=toon_mat, exists=True):
+                conns = cmds.listConnections(f"{toon_mat}.{attr}", source=True, destination=False, plugs=True) or []
+                for c in conns:
+                    try:
+                        cmds.disconnectAttr(c, f"{toon_mat}.{attr}")
+                    except Exception:
+                        pass
+
+        if use_iro_trace:
+            base_conns = cmds.listConnections(f"{toon_mat}.baseColor", source=True, destination=False, plugs=True)
+            if base_conns:
+                mult_node = f"{toon_mat}_edgeColorMult"
+                if not cmds.objExists(mult_node):
+                    mult_node = cmds.shadingNode('aiMultiply', asUtility=True, name=mult_node)
+                cmds.connectAttr(base_conns[0], f"{mult_node}.input1", force=True)
+                cmds.setAttr(f"{mult_node}.input2", iro_mult, iro_mult, iro_mult, type="double3")
+                cmds.connectAttr(f"{mult_node}.outColor", f"{toon_mat}.edgeColor", force=True)
+                cmds.connectAttr(f"{mult_node}.outColor", f"{toon_mat}.silhouetteColor", force=True)
+                return
+            else:
+                val = cmds.getAttr(f"{toon_mat}.baseColor")
+                if isinstance(val, list) and len(val[0]) >= 3:
+                    r = val[0][0] * iro_mult
+                    g = val[0][1] * iro_mult
+                    b = val[0][2] * iro_mult
+                    cmds.setAttr(f"{toon_mat}.edgeColor", r, g, b, type="double3")
+                    cmds.setAttr(f"{toon_mat}.silhouetteColor", r, g, b, type="double3")
+                    return
+
+        if cmds.attributeQuery('edgeColor', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.edgeColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+        if cmds.attributeQuery('silhouetteColor', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.silhouetteColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+
+    def apply_toon_edge_settings(self, toon_mat, enable, angle_thresh, edge_rgb, split_aov, aov_name, use_iro_trace, iro_mult, noise_amp, noise_freq):
         if cmds.attributeQuery('enable', node=toon_mat, exists=True):
             cmds.setAttr(f"{toon_mat}.enable", enable)
         if cmds.attributeQuery('enableSilhouette', node=toon_mat, exists=True):
             cmds.setAttr(f"{toon_mat}.enableSilhouette", enable)
         if cmds.attributeQuery('angleThreshold', node=toon_mat, exists=True):
             cmds.setAttr(f"{toon_mat}.angleThreshold", angle_thresh)
-        if cmds.attributeQuery('edgeColor', node=toon_mat, exists=True):
-            cmds.setAttr(f"{toon_mat}.edgeColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
-        if cmds.attributeQuery('silhouetteColor', node=toon_mat, exists=True):
-            cmds.setAttr(f"{toon_mat}.silhouetteColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
 
-        # AOV分離がONなら、aiToonの aov_prefix に輪郭線AOV名を書き込む
+        self.apply_edge_color_to_material(toon_mat, edge_rgb, use_iro_trace, iro_mult)
+        # スライダー変更時はデフォルトでノイズON（入れる状態）として更新
+        self.apply_hand_drawn_noise_to_toon(toon_mat, True, noise_amp, noise_freq)
+
         if cmds.attributeQuery('aov_prefix', node=toon_mat, exists=True):
             prefix_val = aov_name if (enable and split_aov) else ""
             cmds.setAttr(f"{toon_mat}.aov_prefix", prefix_val, type="string")
+
+    def apply_color_to_selected_only(self, *args):
+        selection = cmds.ls(selection=True, long=True)
+        if not selection:
+            cmds.warning("線の色を変えたいモデルを選択してください。")
+            return
+
+        shapes = cmds.ls(selection, dag=True, leaf=True, type=['mesh', 'nurbsSurface'], noIntermediate=True, long=True)
+        edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
+
+        updated_mats = set()
+        for shape in shapes:
+            sgs = cmds.listConnections(shape, type='shadingEngine') or []
+            for sg in sgs:
+                mats = cmds.listConnections(f"{sg}.surfaceShader", type='aiToon') or []
+                for mat in mats:
+                    self.apply_edge_color_to_material(mat, edge_rgb, False, 1.0)
+                    updated_mats.add(mat)
+
+        cmds.inViewMessage(
+            amg=f'選択モデルの輪郭線カラーを変更しました ({len(updated_mats)} マテリアル)', 
+            pos='midCenter', 
+            fade=True
+        )
 
     def get_source_color_attr(self, mat):
         for attr in ['baseColor', 'color', 'outColor', 'surfaceColor']:
@@ -287,11 +438,14 @@ class AiToonConverterWindow(object):
         contour_width = cmds.floatSliderGrp(self.contour_width_slider, query=True, value=True)
         angle_thresh = cmds.floatSliderGrp(self.angle_thresh_slider, query=True, value=True)
         edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
+        use_iro_trace = cmds.checkBox(self.iro_trace_cb, query=True, value=True)
+        iro_mult = cmds.floatSliderGrp(self.iro_trace_mult_slider, query=True, value=True)
+        noise_amp = cmds.floatSliderGrp(self.noise_amp_slider, query=True, value=True)
+        noise_freq = cmds.floatSliderGrp(self.noise_freq_slider, query=True, value=True)
         split_aov = cmds.checkBox(self.split_aov_cb, query=True, value=True)
         aov_name = cmds.textFieldGrp(self.aov_name_field, query=True, text=True).strip() or "toon_outline"
         separate_files = cmds.checkBox(self.merge_aov_cb, query=True, value=True)
 
-        # AOVとフィルターの構築
         self.setup_aov_and_filters(enable_contour, split_aov, aov_name, contour_width, separate_files)
 
         converted_count = 0
@@ -313,7 +467,9 @@ class AiToonConverterWindow(object):
                 self.apply_toon_clean_settings(toon_mat)
 
             self.create_and_connect_tonemap_ramp(toon_mat, shadow_val, shadow_pos)
-            self.apply_toon_edge_settings(toon_mat, enable_contour, angle_thresh, edge_rgb, split_aov, aov_name)
+            self.apply_toon_edge_settings(toon_mat, enable_contour, angle_thresh, edge_rgb, split_aov, aov_name, use_iro_trace, iro_mult, noise_amp, noise_freq)
+            # 新規作成時はデフォルトでノイズON（入れる）にする
+            self.apply_hand_drawn_noise_to_toon(toon_mat, True, noise_amp, noise_freq)
 
             if assigned_members:
                 cmds.sets(assigned_members, edit=True, forceElement=toon_sg)
@@ -336,7 +492,7 @@ class AiToonConverterWindow(object):
             converted_count += 1
 
         cmds.inViewMessage(
-            amg=f'<hl>aiToon + AOV分離</hl> 設定完了 ({converted_count} 個 / AOV: {aov_name})', 
+            amg=f'<hl>aiToon + 手描きノイズ</hl> 変換完了 ({converted_count} 個)', 
             pos='midCenter', 
             fade=True
         )
@@ -362,6 +518,10 @@ class AiToonConverterWindow(object):
         contour_width = cmds.floatSliderGrp(self.contour_width_slider, query=True, value=True)
         angle_thresh = cmds.floatSliderGrp(self.angle_thresh_slider, query=True, value=True)
         edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
+        use_iro_trace = cmds.checkBox(self.iro_trace_cb, query=True, value=True)
+        iro_mult = cmds.floatSliderGrp(self.iro_trace_mult_slider, query=True, value=True)
+        noise_amp = cmds.floatSliderGrp(self.noise_amp_slider, query=True, value=True)
+        noise_freq = cmds.floatSliderGrp(self.noise_freq_slider, query=True, value=True)
         split_aov = cmds.checkBox(self.split_aov_cb, query=True, value=True)
         aov_name = cmds.textFieldGrp(self.aov_name_field, query=True, text=True).strip() or "toon_outline"
         separate_files = cmds.checkBox(self.merge_aov_cb, query=True, value=True)
@@ -370,7 +530,7 @@ class AiToonConverterWindow(object):
 
         toons = cmds.ls(type='aiToon') or []
         for t in toons:
-            self.apply_toon_edge_settings(t, enable_contour, angle_thresh, edge_rgb, split_aov, aov_name)
+            self.apply_toon_edge_settings(t, enable_contour, angle_thresh, edge_rgb, split_aov, aov_name, use_iro_trace, iro_mult, noise_amp, noise_freq)
 
     def apply_all_scene_fixes(self, *args):
         self.update_existing_contours()
@@ -387,9 +547,8 @@ class AiToonConverterWindow(object):
             if cmds.attributeQuery('aiRadius', node=l, exists=True):
                 cmds.setAttr(f"{l}.aiRadius", 0.0)
 
-        aov_name = cmds.textFieldGrp(self.aov_name_field, query=True, text=True).strip() or "toon_outline"
         cmds.inViewMessage(
-            amg=f'<hl>AOV分離({aov_name}) ＆ 粒粒対策</hl> 一括反映完了', 
+            amg='<hl>手描きノイズ・輪郭線・AOV</hl> 一括反映完了', 
             pos='midCenter', 
             fade=True
         )

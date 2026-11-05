@@ -1,0 +1,311 @@
+import maya.cmds as cmds
+
+class AiToonConverterWindow(object):
+    def __init__(self):
+        self.window_name = "AiToonConverterWin"
+        self.build_ui()
+
+    def build_ui(self):
+        if cmds.window(self.window_name, exists=True):
+            cmds.deleteUI(self.window_name, window=True)
+
+        self.window = cmds.window(
+            self.window_name, 
+            title="aiToon Converter + Ramp & Contour", 
+            widthHeight=(390, 480),
+            sizeable=True
+        )
+        
+        cmds.columnLayout(adjustableColumn=True, rowSpacing=8, columnAttach=('both', 12))
+        cmds.separator(height=8, style='none')
+        cmds.text(
+            label="元の色を保持して aiToon に変換し、\n2階調Ramp・粒粒対策・輪郭線(Contour)を一括設定します。", 
+            align='left'
+        )
+        cmds.separator(height=4, style='in')
+
+        # --- Ramp (影) 設定 ---
+        cmds.text(label="【1. Base Tonemap (影の2階調設定)】", align='left', font="boldLabelFont")
+        self.shadow_val_slider = cmds.floatSliderGrp(
+            label="影の明るさ (暗〜明): ", 
+            field=True, minValue=0.0, maxValue=1.0, value=0.45, step=0.05,
+            columnWidth3=(130, 50, 150)
+        )
+        self.shadow_pos_slider = cmds.floatSliderGrp(
+            label="影の境界位置: ", 
+            field=True, minValue=0.01, maxValue=0.99, value=0.5, step=0.05,
+            columnWidth3=(130, 50, 150)
+        )
+        self.clean_mat_cb = cmds.checkBox(
+            label="粒粒防止：間接光(Indirect)とSpecularを0にする", 
+            value=True
+        )
+
+        cmds.separator(height=6, style='in')
+
+        # --- Contour (輪郭線) 設定 ---
+        cmds.text(label="【2. 輪郭線 (Edge / Contour) 設定】", align='left', font="boldLabelFont")
+        self.enable_contour_cb = cmds.checkBox(
+            label="輪郭線 (Contour Filter) を有効化する", 
+            value=True
+        )
+        self.contour_width_slider = cmds.floatSliderGrp(
+            label="全体の線の太さ (px): ", 
+            field=True, minValue=0.1, maxValue=10.0, value=2.0, step=0.1,
+            columnWidth3=(130, 50, 150),
+            changeCommand=self.update_existing_contours
+        )
+        self.angle_thresh_slider = cmds.floatSliderGrp(
+            label="内部線の角度閾値: ", 
+            field=True, minValue=0.0, maxValue=180.0, value=30.0, step=1.0,
+            annotation="数値を下げるほど細かい凹凸にも線が描かれます（180で外周シルエットのみ）",
+            columnWidth3=(130, 50, 150),
+            changeCommand=self.update_existing_contours
+        )
+        self.edge_color_slider = cmds.colorSliderGrp(
+            label="輪郭線の色: ", 
+            rgb=(0.0, 0.0, 0.0),
+            columnWidth3=(130, 50, 150),
+            changeCommand=self.update_existing_contours
+        )
+
+        cmds.separator(height=8, style='in')
+
+        # --- 実行ボタン ---
+        cmds.button(
+            label="選択モデルを aiToon に置き換え（色＋Ramp＋輪郭線）", 
+            height=45, 
+            backgroundColor=(0.25, 0.45, 0.35),
+            command=self.run_conversion
+        )
+
+        cmds.separator(height=4, style='none')
+        cmds.button(
+            label="既存aiToon・ライトの粒粒除去 ＆ 輪郭線を一括適用", 
+            height=36, 
+            backgroundColor=(0.35, 0.35, 0.5),
+            annotation="すでに変換済みのシーンに対しても、輪郭線設定と粒粒対策をまとめて反映します。",
+            command=self.apply_all_scene_fixes
+        )
+        cmds.separator(height=8, style='none')
+        cmds.showWindow(self.window)
+
+    def ensure_arnold_loaded(self):
+        if not cmds.pluginInfo('mtoa', query=True, loaded=True):
+            try:
+                cmds.loadPlugin('mtoa')
+            except Exception:
+                cmds.warning("Arnold (mtoa) プラグインがロードできません。")
+                return False
+        # Arnoldのレンダー設定ノードが未生成なら初期化
+        if not cmds.objExists('defaultArnoldFilter'):
+            try:
+                import mtoa.core as core
+                core.createOptions()
+            except Exception as e:
+                print(f"Arnold options init warning: {e}")
+        return True
+
+    def setup_arnold_contour_filter(self, width):
+        """Render Settings の Filter を contour に変更し、太さを設定する"""
+        if not cmds.objExists('defaultArnoldFilter'):
+            return
+        try:
+            cmds.setAttr('defaultArnoldFilter.ai_translator', 'contour', type='string')
+            if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
+                cmds.setAttr('defaultArnoldFilter.width', width)
+        except Exception as e:
+            print(f"Failed to set defaultArnoldFilter to contour: {e}")
+
+    def apply_toon_edge_settings(self, toon_mat, angle_thresh, edge_rgb):
+        """aiToonマテリアル側のEdge（輪郭線）パラメータを設定"""
+        if cmds.attributeQuery('enable', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.enable", True)
+        if cmds.attributeQuery('enableSilhouette', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.enableSilhouette", True)
+        if cmds.attributeQuery('angleThreshold', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.angleThreshold", angle_thresh)
+        if cmds.attributeQuery('edgeColor', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.edgeColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+        if cmds.attributeQuery('silhouetteColor', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.silhouetteColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+
+    def get_source_color_attr(self, mat):
+        for attr in ['baseColor', 'color', 'outColor', 'surfaceColor']:
+            if cmds.attributeQuery(attr, node=mat, exists=True):
+                return f"{mat}.{attr}"
+        return None
+
+    def copy_color_or_texture(self, old_mat, new_toon):
+        src_attr = self.get_source_color_attr(old_mat)
+        if not src_attr:
+            return
+
+        conns = cmds.listConnections(src_attr, source=True, destination=False, plugs=True)
+        if conns:
+            try:
+                cmds.connectAttr(conns[0], f"{new_toon}.baseColor", force=True)
+                return
+            except Exception as e:
+                print(f"Texture connection copy failed: {e}")
+
+        try:
+            val = cmds.getAttr(src_attr)
+            if isinstance(val, list) and len(val[0]) >= 3:
+                r, g, b = val[0][0], val[0][1], val[0][2]
+                cmds.setAttr(f"{new_toon}.baseColor", r, g, b, type="double3")
+        except Exception as e:
+            print(f"Color value copy failed: {e}")
+
+    def apply_toon_clean_settings(self, toon_mat):
+        if cmds.attributeQuery('indirectDiffuse', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.indirectDiffuse", 0.0)
+        if cmds.attributeQuery('specular', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.specular", 0.0)
+        if cmds.attributeQuery('indirectSpecular', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.indirectSpecular", 0.0)
+
+    def create_and_connect_tonemap_ramp(self, toon_mat, shadow_val, shadow_pos):
+        ramp = cmds.shadingNode('ramp', asTexture=True, name=f"{toon_mat}_tonemapRamp")
+        p2d = cmds.shadingNode('place2dTexture', asUtility=True, name=f"{ramp}_p2d")
+        cmds.connectAttr(f"{p2d}.outUV", f"{ramp}.uvCoord", force=True)
+        cmds.connectAttr(f"{p2d}.outUvFilterSize", f"{ramp}.uvFilterSize", force=True)
+
+        cmds.setAttr(f"{ramp}.interpolation", 0)
+        cmds.setAttr(f"{ramp}.colorEntryList[0].position", 0.0)
+        cmds.setAttr(f"{ramp}.colorEntryList[0].color", shadow_val, shadow_val, shadow_val, type="double3")
+        cmds.setAttr(f"{ramp}.colorEntryList[1].position", shadow_pos)
+        cmds.setAttr(f"{ramp}.colorEntryList[1].color", 1.0, 1.0, 1.0, type="double3")
+
+        indices = cmds.getAttr(f"{ramp}.colorEntryList", multiIndices=True) or []
+        for idx in indices:
+            if idx > 1:
+                cmds.removeMultiInstance(f"{ramp}.colorEntryList[{idx}]", b=True)
+
+        cmds.connectAttr(f"{ramp}.outColor", f"{toon_mat}.baseTonemap", force=True)
+
+    def run_conversion(self, *args):
+        if not self.ensure_arnold_loaded():
+            return
+
+        selection = cmds.ls(selection=True, long=True)
+        if not selection:
+            cmds.warning("モデルを選択してからボタンを押してください。")
+            return
+
+        shapes = cmds.ls(selection, dag=True, leaf=True, type=['mesh', 'nurbsSurface'], noIntermediate=True, long=True)
+        if not shapes:
+            cmds.warning("選択対象の中にメッシュが見つかりません。")
+            return
+
+        sgs = set()
+        for shape in shapes:
+            connected_sgs = cmds.listConnections(shape, type='shadingEngine') or []
+            for sg in connected_sgs:
+                sgs.add(sg)
+
+        if not sgs:
+            cmds.warning("割り当てられているシェーディンググループが見つかりません。")
+            return
+
+        # UI値の取得
+        shadow_val = cmds.floatSliderGrp(self.shadow_val_slider, query=True, value=True)
+        shadow_pos = cmds.floatSliderGrp(self.shadow_pos_slider, query=True, value=True)
+        clean_mat = cmds.checkBox(self.clean_mat_cb, query=True, value=True)
+        enable_contour = cmds.checkBox(self.enable_contour_cb, query=True, value=True)
+        contour_width = cmds.floatSliderGrp(self.contour_width_slider, query=True, value=True)
+        angle_thresh = cmds.floatSliderGrp(self.angle_thresh_slider, query=True, value=True)
+        edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
+
+        # Render Settings の Contour Filter 設定
+        if enable_contour:
+            self.setup_arnold_contour_filter(contour_width)
+
+        converted_count = 0
+
+        for sg in sgs:
+            mats = cmds.listConnections(f"{sg}.surfaceShader", source=True, destination=False) or []
+            old_mat = mats[0] if mats else None
+            assigned_members = cmds.sets(sg, query=True) or []
+
+            base_name = old_mat if old_mat else "model"
+            toon_mat = cmds.shadingNode('aiToon', asShader=True, name=f"{base_name}_aiToon")
+            toon_sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=f"{toon_mat}SG")
+            cmds.connectAttr(f"{toon_mat}.outColor", f"{toon_sg}.surfaceShader", force=True)
+
+            if old_mat:
+                self.copy_color_or_texture(old_mat, toon_mat)
+
+            if clean_mat:
+                self.apply_toon_clean_settings(toon_mat)
+
+            self.create_and_connect_tonemap_ramp(toon_mat, shadow_val, shadow_pos)
+
+            if enable_contour:
+                self.apply_toon_edge_settings(toon_mat, angle_thresh, edge_rgb)
+
+            if assigned_members:
+                cmds.sets(assigned_members, edit=True, forceElement=toon_sg)
+            else:
+                for shape in shapes:
+                    cmds.sets(shape, edit=True, forceElement=toon_sg)
+
+            if sg not in ['initialShadingGroup', 'initialParticleSE']:
+                try:
+                    cmds.delete(sg)
+                except Exception as e:
+                    print(f"Failed to delete SG {sg}: {e}")
+
+            if old_mat and old_mat not in ['lambert1', 'standardSurface1', 'particleCloud1']:
+                try:
+                    cmds.delete(old_mat)
+                except Exception as e:
+                    print(f"Failed to delete Material {old_mat}: {e}")
+
+            converted_count += 1
+
+        cmds.inViewMessage(
+            amg=f'<hl>aiToon + Ramp + Contour</hl> 変換完了 ({converted_count} 個)', 
+            pos='midCenter', 
+            fade=True
+        )
+
+    def update_existing_contours(self, *args):
+        """スライダーを動かした時にシーン内の既存aiToonとFilterへリアルタイム反映"""
+        if not self.ensure_arnold_loaded():
+            return
+        enable_contour = cmds.checkBox(self.enable_contour_cb, query=True, value=True)
+        contour_width = cmds.floatSliderGrp(self.contour_width_slider, query=True, value=True)
+        angle_thresh = cmds.floatSliderGrp(self.angle_thresh_slider, query=True, value=True)
+        edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
+
+        if enable_contour:
+            self.setup_arnold_contour_filter(contour_width)
+
+        toons = cmds.ls(type='aiToon') or []
+        for t in toons:
+            self.apply_toon_edge_settings(t, angle_thresh, edge_rgb)
+
+    def apply_all_scene_fixes(self, *args):
+        """既存シーンのaiToonに対しても輪郭線と粒粒対策を一括適用"""
+        self.update_existing_contours()
+
+        toons = cmds.ls(type='aiToon') or []
+        for t in toons:
+            self.apply_toon_clean_settings(t)
+
+        lights = cmds.ls(lights=True) or []
+        for l in lights:
+            if cmds.attributeQuery('aiAngle', node=l, exists=True):
+                cmds.setAttr(f"{l}.aiAngle", 0.0)
+            if cmds.attributeQuery('aiRadius', node=l, exists=True):
+                cmds.setAttr(f"{l}.aiRadius", 0.0)
+
+        cmds.inViewMessage(
+            amg=f'<hl>輪郭線 ＆ 粒粒対策</hl> 一括反映完了 (aiToon: {len(toons)}個)', 
+            pos='midCenter', 
+            fade=True
+        )
+
+# ウィンドウの起動
+AiToonConverterWindow()

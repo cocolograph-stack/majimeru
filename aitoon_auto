@@ -11,30 +11,32 @@ class AiToonConverterWindow(object):
 
         self.window = cmds.window(
             self.window_name, 
-            title="aiToon Converter + Ramp & Contour", 
-            widthHeight=(390, 480),
+            title="aiToon Converter + AOV Splitter", 
+            widthHeight=(410, 580),
             sizeable=True
         )
         
         cmds.columnLayout(adjustableColumn=True, rowSpacing=8, columnAttach=('both', 12))
         cmds.separator(height=8, style='none')
         cmds.text(
-            label="元の色を保持して aiToon に変換し、\n2階調Ramp・粒粒対策・輪郭線(Contour)を一括設定します。", 
+            label="元の色を保持して aiToon に変換し、\n2階調Ramp・粒粒対策・輪郭線・AOV分離を一括設定します。", 
             align='left'
         )
         cmds.separator(height=4, style='in')
 
-        # --- Ramp (影) 設定 ---
+        # --- 1. Ramp (影) 設定 ---
         cmds.text(label="【1. Base Tonemap (影の2階調設定)】", align='left', font="boldLabelFont")
         self.shadow_val_slider = cmds.floatSliderGrp(
             label="影の明るさ (暗〜明): ", 
             field=True, minValue=0.0, maxValue=1.0, value=0.45, step=0.05,
-            columnWidth3=(130, 50, 150)
+            columnWidth3=(135, 50, 150),
+            changeCommand=self.update_existing_ramps
         )
         self.shadow_pos_slider = cmds.floatSliderGrp(
             label="影の境界位置: ", 
             field=True, minValue=0.01, maxValue=0.99, value=0.5, step=0.05,
-            columnWidth3=(130, 50, 150)
+            columnWidth3=(135, 50, 150),
+            changeCommand=self.update_existing_ramps
         )
         self.clean_mat_cb = cmds.checkBox(
             label="粒粒防止：間接光(Indirect)とSpecularを0にする", 
@@ -43,37 +45,58 @@ class AiToonConverterWindow(object):
 
         cmds.separator(height=6, style='in')
 
-        # --- Contour (輪郭線) 設定 ---
+        # --- 2. Contour (輪郭線) 設定 ---
         cmds.text(label="【2. 輪郭線 (Edge / Contour) 設定】", align='left', font="boldLabelFont")
         self.enable_contour_cb = cmds.checkBox(
-            label="輪郭線 (Contour Filter) を有効化する", 
-            value=True
+            label="輪郭線を有効化する", 
+            value=True,
+            changeCommand=self.update_existing_contours
         )
         self.contour_width_slider = cmds.floatSliderGrp(
             label="全体の線の太さ (px): ", 
             field=True, minValue=0.1, maxValue=10.0, value=2.0, step=0.1,
-            columnWidth3=(130, 50, 150),
+            columnWidth3=(135, 50, 150),
             changeCommand=self.update_existing_contours
         )
         self.angle_thresh_slider = cmds.floatSliderGrp(
             label="内部線の角度閾値: ", 
             field=True, minValue=0.0, maxValue=180.0, value=30.0, step=1.0,
-            annotation="数値を下げるほど細かい凹凸にも線が描かれます（180で外周シルエットのみ）",
-            columnWidth3=(130, 50, 150),
+            columnWidth3=(135, 50, 150),
             changeCommand=self.update_existing_contours
         )
         self.edge_color_slider = cmds.colorSliderGrp(
             label="輪郭線の色: ", 
             rgb=(0.0, 0.0, 0.0),
-            columnWidth3=(130, 50, 150),
+            columnWidth3=(135, 50, 150),
             changeCommand=self.update_existing_contours
+        )
+
+        cmds.separator(height=6, style='in')
+
+        # --- 3. After Effects 合成用 AOV分離設定 ---
+        cmds.text(label="【3. After Effects合成用 AOV分離設定】", align='left', font="boldLabelFont")
+        self.split_aov_cb = cmds.checkBox(
+            label="Beauty(中身)から線を消し、専用AOVに輪郭線を分離する", 
+            value=True,
+            annotation="ONにするとBeautyは塗りだけになり、指定したAOVに輪郭線だけがアルファ付きで出力されます。",
+            changeCommand=self.update_existing_contours
+        )
+        self.aov_name_field = cmds.textFieldGrp(
+            label="輪郭線AOV名: ",
+            text="toon_outline",
+            columnWidth2=(135, 180)
+        )
+        self.merge_aov_cb = cmds.checkBox(
+            label="マルチチャンネルEXRではなく個別ファイルで書き出す", 
+            value=True,
+            annotation="After Effectsで扱いやすいよう、mergeAOVsをOFFにしてBeautyと線画を別ファイルで出力する設定にします。"
         )
 
         cmds.separator(height=8, style='in')
 
         # --- 実行ボタン ---
         cmds.button(
-            label="選択モデルを aiToon に置き換え（色＋Ramp＋輪郭線）", 
+            label="選択モデルを aiToon に置き換え（色＋Ramp＋輪郭線＋AOV）", 
             height=45, 
             backgroundColor=(0.25, 0.45, 0.35),
             command=self.run_conversion
@@ -81,10 +104,9 @@ class AiToonConverterWindow(object):
 
         cmds.separator(height=4, style='none')
         cmds.button(
-            label="既存aiToon・ライトの粒粒除去 ＆ 輪郭線を一括適用", 
-            height=36, 
+            label="既存シーンに AOV分離・輪郭線・粒粒対策 を一括適用", 
+            height=38, 
             backgroundColor=(0.35, 0.35, 0.5),
-            annotation="すでに変換済みのシーンに対しても、輪郭線設定と粒粒対策をまとめて反映します。",
             command=self.apply_all_scene_fixes
         )
         cmds.separator(height=8, style='none')
@@ -97,7 +119,6 @@ class AiToonConverterWindow(object):
             except Exception:
                 cmds.warning("Arnold (mtoa) プラグインがロードできません。")
                 return False
-        # Arnoldのレンダー設定ノードが未生成なら初期化
         if not cmds.objExists('defaultArnoldFilter'):
             try:
                 import mtoa.core as core
@@ -106,29 +127,80 @@ class AiToonConverterWindow(object):
                 print(f"Arnold options init warning: {e}")
         return True
 
-    def setup_arnold_contour_filter(self, width):
-        """Render Settings の Filter を contour に変更し、太さを設定する"""
+    def setup_aov_and_filters(self, enable_contour, split_aov, aov_name, width, separate_files):
+        """Beautyと輪郭線AOVのフィルター構成をセットアップする"""
         if not cmds.objExists('defaultArnoldFilter'):
             return
-        try:
+
+        # 個別ファイル書き出し設定 (mergeAOVs を OFF にするとフォルダ・ファイルが分かれてAEで読みやすい)
+        if cmds.objExists('defaultArnoldDriver') and separate_files:
+            if cmds.attributeQuery('mergeAOVs', node='defaultArnoldDriver', exists=True):
+                cmds.setAttr('defaultArnoldDriver.mergeAOVs', False)
+
+        if not enable_contour:
+            cmds.setAttr('defaultArnoldFilter.ai_translator', 'gaussian', type='string')
+            return
+
+        if split_aov:
+            # 1. Beauty(中身)には輪郭線が出ないようにメインフィルターを gaussian に戻す
+            cmds.setAttr('defaultArnoldFilter.ai_translator', 'gaussian', type='string')
+            if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
+                cmds.setAttr('defaultArnoldFilter.width', 2.0)
+
+            # 2. 輪郭線用のAOVを作成・取得
+            aov_node = f"aiAOV_{aov_name}"
+            if not cmds.objExists(aov_node):
+                try:
+                    import mtoa.aovs as aovs
+                    aov_interface = aovs.AOVInterface()
+                    aov_obj = aov_interface.addAOV(aov_name, aovType='rgba')
+                    aov_node = aov_obj.node
+                except Exception as e:
+                    print(f"AOV creation failed: {e}")
+                    return
+            
+            # AOVを有効化 & RGBA型に設定
+            if cmds.attributeQuery('enabled', node=aov_node, exists=True):
+                cmds.setAttr(f"{aov_node}.enabled", True)
+            if cmds.attributeQuery('type', node=aov_node, exists=True):
+                cmds.setAttr(f"{aov_node}.type", 6) # 6 = RGBA
+
+            # 3. 輪郭線AOV専用の contour フィルターを作成して接続
+            contour_filter = "aiToon_contourFilter"
+            if not cmds.objExists(contour_filter):
+                contour_filter = cmds.createNode('aiAOVFilter', name=contour_filter, skipSelect=True)
+            
+            cmds.setAttr(f"{contour_filter}.ai_translator", "contour", type="string")
+            if cmds.attributeQuery('width', node=contour_filter, exists=True):
+                cmds.setAttr(f"{contour_filter}.width", width)
+
+            # AOVに専用コンターフィルターとデフォルトドライバーを接続
+            cmds.connectAttr(f"{contour_filter}.message", f"{aov_node}.outputs[0].filter", force=True)
+            if cmds.objExists('defaultArnoldDriver'):
+                cmds.connectAttr("defaultArnoldDriver.message", f"{aov_node}.outputs[0].driver", force=True)
+
+        else:
+            # AOV分離しない場合はBeautyに直接輪郭線を出す
             cmds.setAttr('defaultArnoldFilter.ai_translator', 'contour', type='string')
             if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
                 cmds.setAttr('defaultArnoldFilter.width', width)
-        except Exception as e:
-            print(f"Failed to set defaultArnoldFilter to contour: {e}")
 
-    def apply_toon_edge_settings(self, toon_mat, angle_thresh, edge_rgb):
-        """aiToonマテリアル側のEdge（輪郭線）パラメータを設定"""
+    def apply_toon_edge_settings(self, toon_mat, enable, angle_thresh, edge_rgb, split_aov, aov_name):
         if cmds.attributeQuery('enable', node=toon_mat, exists=True):
-            cmds.setAttr(f"{toon_mat}.enable", True)
+            cmds.setAttr(f"{toon_mat}.enable", enable)
         if cmds.attributeQuery('enableSilhouette', node=toon_mat, exists=True):
-            cmds.setAttr(f"{toon_mat}.enableSilhouette", True)
+            cmds.setAttr(f"{toon_mat}.enableSilhouette", enable)
         if cmds.attributeQuery('angleThreshold', node=toon_mat, exists=True):
             cmds.setAttr(f"{toon_mat}.angleThreshold", angle_thresh)
         if cmds.attributeQuery('edgeColor', node=toon_mat, exists=True):
             cmds.setAttr(f"{toon_mat}.edgeColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
         if cmds.attributeQuery('silhouetteColor', node=toon_mat, exists=True):
             cmds.setAttr(f"{toon_mat}.silhouetteColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+
+        # AOV分離がONなら、aiToonの aov_prefix に輪郭線AOV名を書き込む
+        if cmds.attributeQuery('aov_prefix', node=toon_mat, exists=True):
+            prefix_val = aov_name if (enable and split_aov) else ""
+            cmds.setAttr(f"{toon_mat}.aov_prefix", prefix_val, type="string")
 
     def get_source_color_attr(self, mat):
         for attr in ['baseColor', 'color', 'outColor', 'surfaceColor']:
@@ -208,7 +280,6 @@ class AiToonConverterWindow(object):
             cmds.warning("割り当てられているシェーディンググループが見つかりません。")
             return
 
-        # UI値の取得
         shadow_val = cmds.floatSliderGrp(self.shadow_val_slider, query=True, value=True)
         shadow_pos = cmds.floatSliderGrp(self.shadow_pos_slider, query=True, value=True)
         clean_mat = cmds.checkBox(self.clean_mat_cb, query=True, value=True)
@@ -216,10 +287,12 @@ class AiToonConverterWindow(object):
         contour_width = cmds.floatSliderGrp(self.contour_width_slider, query=True, value=True)
         angle_thresh = cmds.floatSliderGrp(self.angle_thresh_slider, query=True, value=True)
         edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
+        split_aov = cmds.checkBox(self.split_aov_cb, query=True, value=True)
+        aov_name = cmds.textFieldGrp(self.aov_name_field, query=True, text=True).strip() or "toon_outline"
+        separate_files = cmds.checkBox(self.merge_aov_cb, query=True, value=True)
 
-        # Render Settings の Contour Filter 設定
-        if enable_contour:
-            self.setup_arnold_contour_filter(contour_width)
+        # AOVとフィルターの構築
+        self.setup_aov_and_filters(enable_contour, split_aov, aov_name, contour_width, separate_files)
 
         converted_count = 0
 
@@ -240,9 +313,7 @@ class AiToonConverterWindow(object):
                 self.apply_toon_clean_settings(toon_mat)
 
             self.create_and_connect_tonemap_ramp(toon_mat, shadow_val, shadow_pos)
-
-            if enable_contour:
-                self.apply_toon_edge_settings(toon_mat, angle_thresh, edge_rgb)
+            self.apply_toon_edge_settings(toon_mat, enable_contour, angle_thresh, edge_rgb, split_aov, aov_name)
 
             if assigned_members:
                 cmds.sets(assigned_members, edit=True, forceElement=toon_sg)
@@ -265,30 +336,45 @@ class AiToonConverterWindow(object):
             converted_count += 1
 
         cmds.inViewMessage(
-            amg=f'<hl>aiToon + Ramp + Contour</hl> 変換完了 ({converted_count} 個)', 
+            amg=f'<hl>aiToon + AOV分離</hl> 設定完了 ({converted_count} 個 / AOV: {aov_name})', 
             pos='midCenter', 
             fade=True
         )
 
+    def update_existing_ramps(self, *args):
+        shadow_val = cmds.floatSliderGrp(self.shadow_val_slider, query=True, value=True)
+        shadow_pos = cmds.floatSliderGrp(self.shadow_pos_slider, query=True, value=True)
+
+        toons = cmds.ls(type='aiToon') or []
+        for t in toons:
+            ramps = cmds.listConnections(f"{t}.baseTonemap", type='ramp') or []
+            for r in ramps:
+                try:
+                    cmds.setAttr(f"{r}.colorEntryList[0].color", shadow_val, shadow_val, shadow_val, type="double3")
+                    cmds.setAttr(f"{r}.colorEntryList[1].position", shadow_pos)
+                except Exception as e:
+                    print(f"Failed to update ramp {r}: {e}")
+
     def update_existing_contours(self, *args):
-        """スライダーを動かした時にシーン内の既存aiToonとFilterへリアルタイム反映"""
         if not self.ensure_arnold_loaded():
             return
         enable_contour = cmds.checkBox(self.enable_contour_cb, query=True, value=True)
         contour_width = cmds.floatSliderGrp(self.contour_width_slider, query=True, value=True)
         angle_thresh = cmds.floatSliderGrp(self.angle_thresh_slider, query=True, value=True)
         edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
+        split_aov = cmds.checkBox(self.split_aov_cb, query=True, value=True)
+        aov_name = cmds.textFieldGrp(self.aov_name_field, query=True, text=True).strip() or "toon_outline"
+        separate_files = cmds.checkBox(self.merge_aov_cb, query=True, value=True)
 
-        if enable_contour:
-            self.setup_arnold_contour_filter(contour_width)
+        self.setup_aov_and_filters(enable_contour, split_aov, aov_name, contour_width, separate_files)
 
         toons = cmds.ls(type='aiToon') or []
         for t in toons:
-            self.apply_toon_edge_settings(t, angle_thresh, edge_rgb)
+            self.apply_toon_edge_settings(t, enable_contour, angle_thresh, edge_rgb, split_aov, aov_name)
 
     def apply_all_scene_fixes(self, *args):
-        """既存シーンのaiToonに対しても輪郭線と粒粒対策を一括適用"""
         self.update_existing_contours()
+        self.update_existing_ramps()
 
         toons = cmds.ls(type='aiToon') or []
         for t in toons:
@@ -301,8 +387,9 @@ class AiToonConverterWindow(object):
             if cmds.attributeQuery('aiRadius', node=l, exists=True):
                 cmds.setAttr(f"{l}.aiRadius", 0.0)
 
+        aov_name = cmds.textFieldGrp(self.aov_name_field, query=True, text=True).strip() or "toon_outline"
         cmds.inViewMessage(
-            amg=f'<hl>輪郭線 ＆ 粒粒対策</hl> 一括反映完了 (aiToon: {len(toons)}個)', 
+            amg=f'<hl>AOV分離({aov_name}) ＆ 粒粒対策</hl> 一括反映完了', 
             pos='midCenter', 
             fade=True
         )

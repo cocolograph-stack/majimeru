@@ -11,42 +11,97 @@ class AiToonAllInOneWindow(object):
 
         self.window = cmds.window(
             self.window_name, 
-            title="aiToon All-in-One Converter", 
-            widthHeight=(380, 320),
+            title="aiToon Converter (選択維持＆濃さキープ版)", 
+            widthHeight=(430, 580),
             sizeable=True
         )
         
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=10, columnAttach=('both', 12))
-        cmds.separator(height=8, style='none')
+        cmds.columnLayout(adjustableColumn=True, rowSpacing=7, columnAttach=('both', 12))
+        cmds.separator(height=6, style='none')
         cmds.text(
-            label="選択中のモデルを aiToon に変換し、\n輪郭線・Ramp（影）・色を一括で適用します。", 
+            label="選択モデルを aiToon に変換します。\nボタンを押した後もモデルの選択状態が維持されます。", 
             align='left'
         )
         cmds.separator(height=4, style='in')
 
+        # --- 1. 輪郭線の基本設定 ---
         self.width_slider = cmds.floatSliderGrp(
-            label="線の太さ (px): ", field=True, minValue=0.1, maxValue=10.0, value=2.0, step=0.1,
-            columnWidth3=(110, 50, 150)
+            label="基本の線幅 (px): ", field=True, minValue=0.5, maxValue=15.0, value=3.5, step=0.1,
+            columnWidth3=(135, 50, 150)
         )
+        self.inner_scale_slider = cmds.floatSliderGrp(
+            label="内側の線の細さ: ", field=True, minValue=0.1, maxValue=1.0, value=0.6, step=0.05,
+            columnWidth3=(135, 50, 150)
+        )
+        
+        cmds.separator(height=4, style='in')
+
+        # --- 2. 手描き風の強弱（太さムラ）設定 ---
+        self.handdrawn_check = cmds.checkBoxGrp(
+            numberOfCheckBoxes=1, label="線の太さ強弱: ", label1="有効にする（筆圧の抑揚を作る）", value1=True,
+            columnWidth2=(135, 220)
+        )
+        self.noise_min_slider = cmds.floatSliderGrp(
+            label="太さのかすれ (最小): ", field=True, minValue=0.0, maxValue=1.0, value=0.45, step=0.05,
+            columnWidth3=(135, 50, 150)
+        )
+        self.noise_scale_slider = cmds.floatSliderGrp(
+            label="太さムラの周期: ", field=True, minValue=0.1, maxValue=50.0, value=6.0, step=0.5,
+            columnWidth3=(135, 50, 150)
+        )
+
+        cmds.separator(height=4, style='in')
+
+        # --- 3. 鉛筆・インクのザラつき（濃さキープ版） ---
+        self.pencil_check = cmds.checkBoxGrp(
+            numberOfCheckBoxes=1, label="鉛筆・インク質感: ", label1="有効にする（濃さを保って粒子感を出す）", value1=True,
+            columnWidth2=(135, 220)
+        )
+        self.ink_density_slider = cmds.floatSliderGrp(
+            label="インクの芯の濃さ: ", field=True, minValue=0.1, maxValue=1.0, value=0.8, step=0.05,
+            columnWidth3=(135, 50, 150)
+        )
+        self.opacity_min_slider = cmds.floatSliderGrp(
+            label="かすれ部分の濃さ: ", field=True, minValue=0.0, maxValue=1.0, value=0.65, step=0.05,
+            columnWidth3=(135, 50, 150)
+        )
+        self.color_jitter_slider = cmds.floatSliderGrp(
+            label="色の濃淡ムラ: ", field=True, minValue=0.0, maxValue=0.3, value=0.06, step=0.01,
+            columnWidth3=(135, 50, 150)
+        )
+        self.grain_scale_slider = cmds.floatSliderGrp(
+            label="粒子の細かさ: ", field=True, minValue=1.0, maxValue=200.0, value=55.0, step=1.0,
+            columnWidth3=(135, 50, 150)
+        )
+
+        cmds.separator(height=4, style='in')
+
+        # --- 4. 影と色の設定 ---
         self.shadow_val_slider = cmds.floatSliderGrp(
             label="影の明るさ: ", field=True, minValue=0.0, maxValue=1.0, value=0.45, step=0.05,
-            columnWidth3=(110, 50, 150)
+            columnWidth3=(135, 50, 150)
         )
         self.shadow_pos_slider = cmds.floatSliderGrp(
             label="影の境界位置: ", field=True, minValue=0.01, maxValue=0.99, value=0.5, step=0.05,
-            columnWidth3=(110, 50, 150)
+            columnWidth3=(135, 50, 150)
         )
         self.edge_color_slider = cmds.colorSliderGrp(
-            label="輪郭線の色: ", rgb=(0.0, 0.0, 0.0),
-            columnWidth3=(110, 50, 150)
+            label="輪郭線のベース色: ", rgb=(0.02, 0.02, 0.02),
+            columnWidth3=(135, 50, 150)
         )
 
         cmds.separator(height=6, style='in')
         cmds.button(
-            label="選択モデルを aiToon に変換する", 
-            height=45, 
+            label="1. 選択モデルを aiToon に変換 / 更新する", 
+            height=40, 
             backgroundColor=(0.25, 0.45, 0.35),
             command=self.run_conversion
+        )
+        cmds.button(
+            label="2. シーン内の全 aiToon の線・濃さを一括更新", 
+            height=34, 
+            backgroundColor=(0.35, 0.40, 0.50),
+            command=self.update_existing
         )
         cmds.separator(height=8, style='none')
         cmds.showWindow(self.window)
@@ -65,116 +120,227 @@ class AiToonAllInOneWindow(object):
                 pass
         return True
 
+    def get_ui_values(self):
+        return {
+            'width': cmds.floatSliderGrp(self.width_slider, query=True, value=True),
+            'inner_scale': cmds.floatSliderGrp(self.inner_scale_slider, query=True, value=True),
+            'use_handdrawn': cmds.checkBoxGrp(self.handdrawn_check, query=True, value1=True),
+            'noise_min': cmds.floatSliderGrp(self.noise_min_slider, query=True, value=True),
+            'noise_scale': cmds.floatSliderGrp(self.noise_scale_slider, query=True, value=True),
+            'use_pencil': cmds.checkBoxGrp(self.pencil_check, query=True, value1=True),
+            'ink_density': cmds.floatSliderGrp(self.ink_density_slider, query=True, value=True),
+            'opacity_min': cmds.floatSliderGrp(self.opacity_min_slider, query=True, value=True),
+            'color_jitter': cmds.floatSliderGrp(self.color_jitter_slider, query=True, value=True),
+            'grain_scale': cmds.floatSliderGrp(self.grain_scale_slider, query=True, value=True),
+            'shadow_val': cmds.floatSliderGrp(self.shadow_val_slider, query=True, value=True),
+            'shadow_pos': cmds.floatSliderGrp(self.shadow_pos_slider, query=True, value=True),
+            'edge_rgb': cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True),
+        }
+
+    def apply_toon_settings(self, toon_mat, v):
+        cmds.setAttr('defaultArnoldFilter.ai_translator', 'contour', type='string')
+        if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
+            cmds.setAttr('defaultArnoldFilter.width', v['width'])
+
+        for suffix in ['_silWidthNoise', '_edgeWidthNoise', '_inkOpacityNoise', '_inkOpacityRange', '_inkColorNoise']:
+            node_name = f"{toon_mat}{suffix}"
+            if cmds.objExists(node_name):
+                cmds.delete(node_name)
+
+        # --- A. 線の太さの強弱 ---
+        if v['use_handdrawn']:
+            sil_noise = cmds.shadingNode('aiNoise', asTexture=True, name=f"{toon_mat}_silWidthNoise")
+            cmds.setAttr(f"{sil_noise}.octaves", 2)
+            cmds.setAttr(f"{sil_noise}.scale", v['noise_scale'], v['noise_scale'], v['noise_scale'], type="double3")
+            cmds.setAttr(f"{sil_noise}.color1", v['noise_min'], v['noise_min'], v['noise_min'], type="double3")
+            cmds.setAttr(f"{sil_noise}.color2", 1.0, 1.0, 1.0, type="double3")
+            if cmds.attributeQuery('silhouetteWidthScale', node=toon_mat, exists=True):
+                cmds.connectAttr(f"{sil_noise}.outColorR", f"{toon_mat}.silhouetteWidthScale", force=True)
+
+            edge_noise = cmds.shadingNode('aiNoise', asTexture=True, name=f"{toon_mat}_edgeWidthNoise")
+            cmds.setAttr(f"{edge_noise}.octaves", 2)
+            cmds.setAttr(f"{edge_noise}.scale", v['noise_scale'], v['noise_scale'], v['noise_scale'], type="double3")
+            inner_min = v['noise_min'] * v['inner_scale']
+            cmds.setAttr(f"{edge_noise}.color1", inner_min, inner_min, inner_min, type="double3")
+            cmds.setAttr(f"{edge_noise}.color2", v['inner_scale'], v['inner_scale'], v['inner_scale'], type="double3")
+            if cmds.attributeQuery('edgeWidthScale', node=toon_mat, exists=True):
+                cmds.connectAttr(f"{edge_noise}.outColorR", f"{toon_mat}.edgeWidthScale", force=True)
+        else:
+            if cmds.attributeQuery('silhouetteWidthScale', node=toon_mat, exists=True):
+                cmds.setAttr(f"{toon_mat}.silhouetteWidthScale", 1.0)
+            if cmds.attributeQuery('edgeWidthScale', node=toon_mat, exists=True):
+                cmds.setAttr(f"{toon_mat}.edgeWidthScale", v['inner_scale'])
+
+        # --- B. 鉛筆・インクのザラつき ---
+        edge_rgb = v['edge_rgb']
+        if v['use_pencil']:
+            op_noise = cmds.shadingNode('aiNoise', asTexture=True, name=f"{toon_mat}_inkOpacityNoise")
+            cmds.setAttr(f"{op_noise}.octaves", 4)
+            cmds.setAttr(f"{op_noise}.distortion", 1.2)
+            cmds.setAttr(f"{op_noise}.scale", v['grain_scale'], v['grain_scale'], v['grain_scale'], type="double3")
+
+            op_range = cmds.shadingNode('aiRange', asUtility=True, name=f"{toon_mat}_inkOpacityRange")
+            cmds.connectAttr(f"{op_noise}.outColor", f"{op_range}.input", force=True)
+            
+            input_max = max(0.2, 1.05 - (v['ink_density'] * 0.65))
+            cmds.setAttr(f"{op_range}.inputMin", 0.15)
+            cmds.setAttr(f"{op_range}.inputMax", input_max)
+            cmds.setAttr(f"{op_range}.outputMin", v['opacity_min'])
+            cmds.setAttr(f"{op_range}.outputMax", 1.0)
+            cmds.setAttr(f"{op_range}.smoothstep", True)
+
+            for attr in ['edgeOpacity', 'silhouetteOpacity']:
+                if cmds.attributeQuery(attr, node=toon_mat, exists=True):
+                    cmds.connectAttr(f"{op_range}.outColorR", f"{toon_mat}.{attr}", force=True)
+
+            col_noise = cmds.shadingNode('aiNoise', asTexture=True, name=f"{toon_mat}_inkColorNoise")
+            cmds.setAttr(f"{col_noise}.octaves", 3)
+            cmds.setAttr(f"{col_noise}.scale", v['grain_scale'] * 0.8, v['grain_scale'] * 0.8, v['grain_scale'] * 0.8, type="double3")
+            
+            r2 = min(1.0, edge_rgb[0] + v['color_jitter'])
+            g2 = min(1.0, edge_rgb[1] + v['color_jitter'])
+            b2 = min(1.0, edge_rgb[2] + v['color_jitter'])
+            cmds.setAttr(f"{col_noise}.color1", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+            cmds.setAttr(f"{col_noise}.color2", r2, g2, b2, type="double3")
+
+            for attr in ['edgeColor', 'silhouetteColor']:
+                if cmds.attributeQuery(attr, node=toon_mat, exists=True):
+                    cmds.connectAttr(f"{col_noise}.outColor", f"{toon_mat}.{attr}", force=True)
+        else:
+            for attr in ['edgeColor', 'silhouetteColor']:
+                if cmds.attributeQuery(attr, node=toon_mat, exists=True):
+                    cmds.setAttr(f"{toon_mat}.{attr}", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+            for attr in ['edgeOpacity', 'silhouetteOpacity']:
+                if cmds.attributeQuery(attr, node=toon_mat, exists=True):
+                    cmds.setAttr(f"{toon_mat}.{attr}", 1.0)
+
+        ramp_name = f"{toon_mat}_tonemapRamp"
+        if cmds.objExists(ramp_name):
+            cmds.setAttr(f"{ramp_name}.colorEntryList[0].color", v['shadow_val'], v['shadow_val'], v['shadow_val'], type="double3")
+            cmds.setAttr(f"{ramp_name}.colorEntryList[1].position", v['shadow_pos'])
+
     def run_conversion(self, *args):
         if not self.ensure_arnold_loaded():
             cmds.warning("Arnold (mtoa) プラグインがロードできません。")
             return
 
-        selection = cmds.ls(selection=True, long=True)
-        if not selection:
-            cmds.warning("家のモデル（メッシュ）を選択してください。")
+        # 実行前の選択オブジェクトを記憶
+        original_selection = cmds.ls(selection=True, long=True)
+        if not original_selection:
+            cmds.warning("対象のモデル（メッシュ）を選択してください。")
             return
 
-        shapes = cmds.ls(selection, dag=True, leaf=True, type=['mesh', 'nurbsSurface'], noIntermediate=True, long=True)
+        shapes = cmds.ls(original_selection, dag=True, leaf=True, type=['mesh', 'nurbsSurface'], noIntermediate=True, long=True)
         if not shapes:
             cmds.warning("有効なメッシュが見つかりません。")
             return
 
-        # 輪郭線フィルター設定
-        cmds.setAttr('defaultArnoldFilter.ai_translator', 'contour', type='string')
-        width_val = cmds.floatSliderGrp(self.width_slider, query=True, value=True)
-        if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
-            cmds.setAttr('defaultArnoldFilter.width', width_val)
-
-        shadow_val = cmds.floatSliderGrp(self.shadow_val_slider, query=True, value=True)
-        shadow_pos = cmds.floatSliderGrp(self.shadow_pos_slider, query=True, value=True)
-        edge_rgb = cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True)
-
+        v = self.get_ui_values()
         sgs = set()
         for shape in shapes:
             connected_sgs = cmds.listConnections(shape, type='shadingEngine') or []
             for sg in connected_sgs:
                 sgs.add(sg)
 
-        converted_count = 0
-        for sg in sgs:
-            mats = cmds.listConnections(f"{sg}.surfaceShader", source=True, destination=False) or []
-            old_mat = mats[0] if mats else None
-            assigned_members = cmds.sets(sg, query=True) or []
+        cmds.undoInfo(openChunk=True)
+        try:
+            converted_count = 0
+            for sg in sgs:
+                mats = cmds.listConnections(f"{sg}.surfaceShader", source=True, destination=False) or []
+                old_mat = mats[0] if mats else None
+                
+                if old_mat and cmds.nodeType(old_mat) == 'aiToon':
+                    self.apply_toon_settings(old_mat, v)
+                    converted_count += 1
+                    continue
 
-            base_name = old_mat if old_mat else "house"
-            toon_mat = cmds.shadingNode('aiToon', asShader=True, name=f"{base_name}_aiToon")
-            toon_sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=f"{toon_mat}SG")
-            cmds.connectAttr(f"{toon_mat}.outColor", f"{toon_sg}.surfaceShader", force=True)
+                assigned_members = cmds.sets(sg, query=True) or []
+                base_name = old_mat if old_mat else "model"
+                toon_mat = cmds.shadingNode('aiToon', asShader=True, name=f"{base_name}_aiToon")
+                toon_sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=f"{toon_mat}SG")
+                cmds.connectAttr(f"{toon_mat}.outColor", f"{toon_sg}.surfaceShader", force=True)
 
-            # 輪郭線・ノイズ防止設定
-            if cmds.attributeQuery('enable', node=toon_mat, exists=True):
-                cmds.setAttr(f"{toon_mat}.enable", True)
-            if cmds.attributeQuery('enableSilhouette', node=toon_mat, exists=True):
-                cmds.setAttr(f"{toon_mat}.enableSilhouette", True)
-            if cmds.attributeQuery('aov_prefix', node=toon_mat, exists=True):
-                cmds.setAttr(f"{toon_mat}.aov_prefix", "", type="string")
-            if cmds.attributeQuery('indirectDiffuse', node=toon_mat, exists=True):
-                cmds.setAttr(f"{toon_mat}.indirectDiffuse", 0.0)
-            if cmds.attributeQuery('specular', node=toon_mat, exists=True):
-                cmds.setAttr(f"{toon_mat}.specular", 0.0)
+                for attr, val in [('enable', True), ('enableSilhouette', True), ('indirectDiffuse', 0.0), ('specular', 0.0)]:
+                    if cmds.attributeQuery(attr, node=toon_mat, exists=True):
+                        cmds.setAttr(f"{toon_mat}.{attr}", val)
+                if cmds.attributeQuery('aov_prefix', node=toon_mat, exists=True):
+                    cmds.setAttr(f"{toon_mat}.aov_prefix", "", type="string")
 
-            # 線の色適用
-            if cmds.attributeQuery('edgeColor', node=toon_mat, exists=True):
-                cmds.setAttr(f"{toon_mat}.edgeColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
-            if cmds.attributeQuery('silhouetteColor', node=toon_mat, exists=True):
-                cmds.setAttr(f"{toon_mat}.silhouetteColor", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
+                for attr in ['baseColor', 'color', 'outColor', 'surfaceColor']:
+                    if old_mat and cmds.attributeQuery(attr, node=old_mat, exists=True):
+                        try:
+                            conns = cmds.listConnections(f"{old_mat}.{attr}", source=True, destination=False, plugs=True)
+                            if conns:
+                                cmds.connectAttr(conns[0], f"{toon_mat}.baseColor", force=True)
+                            else:
+                                val = cmds.getAttr(f"{old_mat}.{attr}")
+                                if isinstance(val, list):
+                                    cmds.setAttr(f"{toon_mat}.baseColor", val[0][0], val[0][1], val[0][2], type="double3")
+                        except Exception:
+                            pass
+                        break
 
-            # 色・テクスチャの継承
-            for attr in ['baseColor', 'color', 'outColor', 'surfaceColor']:
-                if old_mat and cmds.attributeQuery(attr, node=old_mat, exists=True):
-                    try:
-                        conns = cmds.listConnections(f"{old_mat}.{attr}", source=True, destination=False, plugs=True)
-                        if conns:
-                            cmds.connectAttr(conns[0], f"{toon_mat}.baseColor", force=True)
-                        else:
-                            val = cmds.getAttr(f"{old_mat}.{attr}")
-                            if isinstance(val, list):
-                                cmds.setAttr(f"{toon_mat}.baseColor", val[0][0], val[0][1], val[0][2], type="double3")
-                    except Exception:
-                        pass
-                    break
+                ramp = cmds.shadingNode('ramp', asTexture=True, name=f"{toon_mat}_tonemapRamp")
+                p2d = cmds.shadingNode('place2dTexture', asUtility=True, name=f"{ramp}_p2d")
+                cmds.connectAttr(f"{p2d}.outUV", f"{ramp}.uvCoord", force=True)
+                cmds.connectAttr(f"{p2d}.outUvFilterSize", f"{ramp}.uvFilterSize", force=True)
+                cmds.setAttr(f"{ramp}.interpolation", 0)
+                cmds.setAttr(f"{ramp}.colorEntryList[0].position", 0.0)
+                cmds.setAttr(f"{ramp}.colorEntryList[1].color", 1.0, 1.0, 1.0, type="double3")
+                
+                indices = cmds.getAttr(f"{ramp}.colorEntryList", multiIndices=True) or []
+                for idx in indices:
+                    if idx > 1:
+                        cmds.removeMultiInstance(f"{ramp}.colorEntryList[{idx}]", b=True)
+                cmds.connectAttr(f"{ramp}.outColor", f"{toon_mat}.baseTonemap", force=True)
 
-            # Rampの作成と接続
-            ramp = cmds.shadingNode('ramp', asTexture=True, name=f"{toon_mat}_tonemapRamp")
-            p2d = cmds.shadingNode('place2dTexture', asUtility=True, name=f"{ramp}_p2d")
-            cmds.connectAttr(f"{p2d}.outUV", f"{ramp}.uvCoord", force=True)
-            cmds.connectAttr(f"{p2d}.outUvFilterSize", f"{ramp}.uvFilterSize", force=True)
-            cmds.setAttr(f"{ramp}.interpolation", 0)
-            cmds.setAttr(f"{ramp}.colorEntryList[0].position", 0.0)
-            cmds.setAttr(f"{ramp}.colorEntryList[0].color", shadow_val, shadow_val, shadow_val, type="double3")
-            cmds.setAttr(f"{ramp}.colorEntryList[1].position", shadow_pos)
-            cmds.setAttr(f"{ramp}.colorEntryList[1].color", 1.0, 1.0, 1.0, type="double3")
+                self.apply_toon_settings(toon_mat, v)
+
+                if assigned_members:
+                    cmds.sets(assigned_members, edit=True, forceElement=toon_sg)
+                else:
+                    for shape in shapes:
+                        cmds.sets(shape, edit=True, forceElement=toon_sg)
+
+                if sg not in ['initialShadingGroup', 'initialParticleSE']:
+                    try: cmds.delete(sg)
+                    except: pass
+                if old_mat and old_mat not in ['lambert1', 'standardSurface1']:
+                    try: cmds.delete(old_mat)
+                    except: pass
+
+                converted_count += 1
+
+            # 元の選択状態を復元する（消えていないノードのみ）
+            valid_sel = [obj for obj in original_selection if cmds.objExists(obj)]
+            if valid_sel:
+                cmds.select(valid_sel, replace=True)
+
+            cmds.inViewMessage(amg=f'<hl>aiToon 変換・適用完了</hl> ({converted_count} 個)', pos='midCenter', fade=True)
+        finally:
+            cmds.undoInfo(closeChunk=True)
+
+    def update_existing(self, *args):
+        original_selection = cmds.ls(selection=True, long=True)
+        v = self.get_ui_values()
+        toon_mats = cmds.ls(type='aiToon') or []
+        if not toon_mats:
+            cmds.warning("シーン内に aiToon マテリアルが見つかりません。")
+            return
+
+        cmds.undoInfo(openChunk=True)
+        try:
+            for mat in toon_mats:
+                self.apply_toon_settings(mat, v)
             
-            indices = cmds.getAttr(f"{ramp}.colorEntryList", multiIndices=True) or []
-            for idx in indices:
-                if idx > 1:
-                    cmds.removeMultiInstance(f"{ramp}.colorEntryList[{idx}]", b=True)
-            
-            cmds.connectAttr(f"{ramp}.outColor", f"{toon_mat}.baseTonemap", force=True)
-
-            # アサイン
-            if assigned_members:
-                cmds.sets(assigned_members, edit=True, forceElement=toon_sg)
+            valid_sel = [obj for obj in original_selection if cmds.objExists(obj)]
+            if valid_sel:
+                cmds.select(valid_sel, replace=True)
             else:
-                for shape in shapes:
-                    cmds.sets(shape, edit=True, forceElement=toon_sg)
+                cmds.select(clear=True)
 
-            # クリーンアップ
-            if sg not in ['initialShadingGroup', 'initialParticleSE']:
-                try: cmds.delete(sg)
-                except: pass
-            if old_mat and old_mat not in ['lambert1', 'standardSurface1']:
-                try: cmds.delete(old_mat)
-                except: pass
-
-            converted_count += 1
-
-        cmds.inViewMessage(amg=f'<hl>家のモデルを aiToon に変換しました</hl> ({converted_count} 個)', pos='midCenter', fade=True)
+            cmds.inViewMessage(amg=f'<hl>既存の aiToon ({len(toon_mats)} 個) を更新しました</hl>', pos='midCenter', fade=True)
+        finally:
+            cmds.undoInfo(closeChunk=True)
 
 AiToonAllInOneWindow()

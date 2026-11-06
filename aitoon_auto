@@ -11,83 +11,102 @@ class AiToonAllInOneWindow(object):
 
         self.window = cmds.window(
             self.window_name, 
-            title="aiToon Converter (選択維持＆濃さキープ版)", 
-            widthHeight=(430, 580),
+            title="aiToon Converter (色トレス＆Angle Threshold対応版)", 
+            widthHeight=(440, 720),
             sizeable=True
         )
         
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=7, columnAttach=('both', 12))
+        cmds.columnLayout(adjustableColumn=True, rowSpacing=6, columnAttach=('both', 12))
         cmds.separator(height=6, style='none')
         cmds.text(
-            label="選択モデルを aiToon に変換します。\nボタンを押した後もモデルの選択状態が維持されます。", 
+            label="選択モデルを aiToon に変換します。\nアングルスレッショルド調整で不要なシワ線・ゴミ線を制御できます。", 
             align='left'
         )
         cmds.separator(height=4, style='in')
 
-        # --- 1. 輪郭線の基本設定 ---
+        # --- 1. 輪郭線とエッジ検出の設定 ---
         self.width_slider = cmds.floatSliderGrp(
             label="基本の線幅 (px): ", field=True, minValue=0.5, maxValue=15.0, value=3.5, step=0.1,
-            columnWidth3=(135, 50, 150)
+            columnWidth3=(140, 50, 150)
         )
         self.inner_scale_slider = cmds.floatSliderGrp(
             label="内側の線の細さ: ", field=True, minValue=0.1, maxValue=1.0, value=0.6, step=0.05,
-            columnWidth3=(135, 50, 150)
+            columnWidth3=(140, 50, 150)
+        )
+        # ★ Angle Threshold（ゴミ線・エッジの出方調整）
+        self.angle_threshold_slider = cmds.floatSliderGrp(
+            label="エッジ検出角度 (°): ", field=True, minValue=0.0, maxValue=180.0, value=80.0, step=1.0,
+            columnWidth3=(140, 50, 150)
         )
         
         cmds.separator(height=4, style='in')
 
-        # --- 2. 手描き風の強弱（太さムラ）設定 ---
+        # --- 2. 線の色（色トレス vs 固定色） ---
+        self.color_trace_check = cmds.checkBoxGrp(
+            numberOfCheckBoxes=1, label="アニメ風 色トレス線: ", label1="有効（塗りに連動した濃い線の色）", value1=True,
+            columnWidth2=(140, 220),
+            changeCommand=self.toggle_color_trace_ui
+        )
+        self.trace_mult_slider = cmds.floatSliderGrp(
+            label="色トレスの明度 (暗さ): ", field=True, minValue=0.05, maxValue=1.0, value=0.42, step=0.02,
+            columnWidth3=(140, 50, 150)
+        )
+        self.trace_sat_slider = cmds.floatSliderGrp(
+            label="色トレスの彩度 (鮮やかさ): ", field=True, minValue=0.5, maxValue=2.0, value=1.20, step=0.05,
+            columnWidth3=(140, 50, 150)
+        )
+        self.edge_color_slider = cmds.colorSliderGrp(
+            label="固定カラーの線色: ", rgb=(0.02, 0.02, 0.02),
+            columnWidth3=(140, 50, 150),
+            enable=False
+        )
+
+        cmds.separator(height=4, style='in')
+
+        # --- 3. 手描き風の強弱（太さムラ）設定 ---
         self.handdrawn_check = cmds.checkBoxGrp(
             numberOfCheckBoxes=1, label="線の太さ強弱: ", label1="有効にする（筆圧の抑揚を作る）", value1=True,
-            columnWidth2=(135, 220)
+            columnWidth2=(140, 220)
         )
         self.noise_min_slider = cmds.floatSliderGrp(
             label="太さのかすれ (最小): ", field=True, minValue=0.0, maxValue=1.0, value=0.45, step=0.05,
-            columnWidth3=(135, 50, 150)
+            columnWidth3=(140, 50, 150)
         )
         self.noise_scale_slider = cmds.floatSliderGrp(
             label="太さムラの周期: ", field=True, minValue=0.1, maxValue=50.0, value=6.0, step=0.5,
-            columnWidth3=(135, 50, 150)
+            columnWidth3=(140, 50, 150)
         )
 
         cmds.separator(height=4, style='in')
 
-        # --- 3. 鉛筆・インクのザラつき（濃さキープ版） ---
+        # --- 4. 鉛筆・インクのザラつき ---
         self.pencil_check = cmds.checkBoxGrp(
-            numberOfCheckBoxes=1, label="鉛筆・インク質感: ", label1="有効にする（濃さを保って粒子感を出す）", value1=True,
-            columnWidth2=(135, 220)
+            numberOfCheckBoxes=1, label="鉛筆・インク質感: ", label1="有効にする（粒子の掠れ感を出す）", value1=True,
+            columnWidth2=(140, 220)
         )
         self.ink_density_slider = cmds.floatSliderGrp(
-            label="インクの芯の濃さ: ", field=True, minValue=0.1, maxValue=1.0, value=0.8, step=0.05,
-            columnWidth3=(135, 50, 150)
+            label="インクの芯の濃さ: ", field=True, minValue=0.1, maxValue=1.0, value=0.85, step=0.05,
+            columnWidth3=(140, 50, 150)
         )
         self.opacity_min_slider = cmds.floatSliderGrp(
-            label="かすれ部分の濃さ: ", field=True, minValue=0.0, maxValue=1.0, value=0.65, step=0.05,
-            columnWidth3=(135, 50, 150)
-        )
-        self.color_jitter_slider = cmds.floatSliderGrp(
-            label="色の濃淡ムラ: ", field=True, minValue=0.0, maxValue=0.3, value=0.06, step=0.01,
-            columnWidth3=(135, 50, 150)
+            label="かすれ部分の濃さ: ", field=True, minValue=0.0, maxValue=1.0, value=0.70, step=0.05,
+            columnWidth3=(140, 50, 150)
         )
         self.grain_scale_slider = cmds.floatSliderGrp(
             label="粒子の細かさ: ", field=True, minValue=1.0, maxValue=200.0, value=55.0, step=1.0,
-            columnWidth3=(135, 50, 150)
+            columnWidth3=(140, 50, 150)
         )
 
         cmds.separator(height=4, style='in')
 
-        # --- 4. 影と色の設定 ---
+        # --- 5. 陰影設定 ---
         self.shadow_val_slider = cmds.floatSliderGrp(
             label="影の明るさ: ", field=True, minValue=0.0, maxValue=1.0, value=0.45, step=0.05,
-            columnWidth3=(135, 50, 150)
+            columnWidth3=(140, 50, 150)
         )
         self.shadow_pos_slider = cmds.floatSliderGrp(
             label="影の境界位置: ", field=True, minValue=0.01, maxValue=0.99, value=0.5, step=0.05,
-            columnWidth3=(135, 50, 150)
-        )
-        self.edge_color_slider = cmds.colorSliderGrp(
-            label="輪郭線のベース色: ", rgb=(0.02, 0.02, 0.02),
-            columnWidth3=(135, 50, 150)
+            columnWidth3=(140, 50, 150)
         )
 
         cmds.separator(height=6, style='in')
@@ -98,13 +117,19 @@ class AiToonAllInOneWindow(object):
             command=self.run_conversion
         )
         cmds.button(
-            label="2. シーン内の全 aiToon の線・濃さを一括更新", 
+            label="2. シーン内の全 aiToon の設定を一括更新", 
             height=34, 
             backgroundColor=(0.35, 0.40, 0.50),
             command=self.update_existing
         )
         cmds.separator(height=8, style='none')
         cmds.showWindow(self.window)
+
+    def toggle_color_trace_ui(self, *args):
+        use_trace = cmds.checkBoxGrp(self.color_trace_check, query=True, value1=True)
+        cmds.floatSliderGrp(self.trace_mult_slider, edit=True, enable=use_trace)
+        cmds.floatSliderGrp(self.trace_sat_slider, edit=True, enable=use_trace)
+        cmds.colorSliderGrp(self.edge_color_slider, edit=True, enable=not use_trace)
 
     def ensure_arnold_loaded(self):
         if not cmds.pluginInfo('mtoa', query=True, loaded=True):
@@ -118,36 +143,55 @@ class AiToonAllInOneWindow(object):
                 core.createOptions()
             except Exception:
                 pass
+            if not cmds.objExists('defaultArnoldFilter'):
+                try:
+                    cmds.shadingNode('aiAOVFilter', asUtility=True, name='defaultArnoldFilter')
+                except Exception:
+                    pass
         return True
 
     def get_ui_values(self):
         return {
             'width': cmds.floatSliderGrp(self.width_slider, query=True, value=True),
             'inner_scale': cmds.floatSliderGrp(self.inner_scale_slider, query=True, value=True),
+            'angle_threshold': cmds.floatSliderGrp(self.angle_threshold_slider, query=True, value=True),
+            'use_color_trace': cmds.checkBoxGrp(self.color_trace_check, query=True, value1=True),
+            'trace_mult': cmds.floatSliderGrp(self.trace_mult_slider, query=True, value=True),
+            'trace_sat': cmds.floatSliderGrp(self.trace_sat_slider, query=True, value=True),
+            'edge_rgb': cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True),
             'use_handdrawn': cmds.checkBoxGrp(self.handdrawn_check, query=True, value1=True),
             'noise_min': cmds.floatSliderGrp(self.noise_min_slider, query=True, value=True),
             'noise_scale': cmds.floatSliderGrp(self.noise_scale_slider, query=True, value=True),
             'use_pencil': cmds.checkBoxGrp(self.pencil_check, query=True, value1=True),
             'ink_density': cmds.floatSliderGrp(self.ink_density_slider, query=True, value=True),
             'opacity_min': cmds.floatSliderGrp(self.opacity_min_slider, query=True, value=True),
-            'color_jitter': cmds.floatSliderGrp(self.color_jitter_slider, query=True, value=True),
             'grain_scale': cmds.floatSliderGrp(self.grain_scale_slider, query=True, value=True),
             'shadow_val': cmds.floatSliderGrp(self.shadow_val_slider, query=True, value=True),
             'shadow_pos': cmds.floatSliderGrp(self.shadow_pos_slider, query=True, value=True),
-            'edge_rgb': cmds.colorSliderGrp(self.edge_color_slider, query=True, rgb=True),
         }
 
     def apply_toon_settings(self, toon_mat, v):
-        cmds.setAttr('defaultArnoldFilter.ai_translator', 'contour', type='string')
-        if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
-            cmds.setAttr('defaultArnoldFilter.width', v['width'])
+        if cmds.objExists('defaultArnoldFilter'):
+            if cmds.attributeQuery('ai_translator', node='defaultArnoldFilter', exists=True):
+                cmds.setAttr('defaultArnoldFilter.ai_translator', 'contour', type='string')
+            if cmds.attributeQuery('width', node='defaultArnoldFilter', exists=True):
+                cmds.setAttr('defaultArnoldFilter.width', v['width'])
 
-        for suffix in ['_silWidthNoise', '_edgeWidthNoise', '_inkOpacityNoise', '_inkOpacityRange', '_inkColorNoise']:
+        # ★ Angle Threshold の設定反映
+        if cmds.attributeQuery('angleThreshold', node=toon_mat, exists=True):
+            cmds.setAttr(f"{toon_mat}.angleThreshold", v['angle_threshold'])
+
+        # クリーンアップ
+        clean_suffixes = [
+            '_silWidthNoise', '_edgeWidthNoise', '_inkOpacityNoise', 
+            '_inkOpacityRange', '_colorTraceCC'
+        ]
+        for suffix in clean_suffixes:
             node_name = f"{toon_mat}{suffix}"
             if cmds.objExists(node_name):
                 cmds.delete(node_name)
 
-        # --- A. 線の太さの強弱 ---
+        # 線の太さ（強弱）
         if v['use_handdrawn']:
             sil_noise = cmds.shadingNode('aiNoise', asTexture=True, name=f"{toon_mat}_silWidthNoise")
             cmds.setAttr(f"{sil_noise}.octaves", 2)
@@ -171,8 +215,35 @@ class AiToonAllInOneWindow(object):
             if cmds.attributeQuery('edgeWidthScale', node=toon_mat, exists=True):
                 cmds.setAttr(f"{toon_mat}.edgeWidthScale", v['inner_scale'])
 
-        # --- B. 鉛筆・インクのザラつき ---
-        edge_rgb = v['edge_rgb']
+        # 線の色（色トレス）
+        final_color_source = None
+        base_conns = cmds.listConnections(f"{toon_mat}.baseColor", source=True, destination=False, plugs=True) or []
+        
+        if v['use_color_trace']:
+            cc_node = cmds.shadingNode('aiColorCorrect', asUtility=True, name=f"{toon_mat}_colorTraceCC")
+            cmds.setAttr(f"{cc_node}.multiply", v['trace_mult'], v['trace_mult'], v['trace_mult'], type="double3")
+            cmds.setAttr(f"{cc_node}.saturation", v['trace_sat'])
+
+            if base_conns:
+                cmds.connectAttr(base_conns[0], f"{cc_node}.input", force=True)
+            else:
+                base_val = cmds.getAttr(f"{toon_mat}.baseColor")[0]
+                cmds.setAttr(f"{cc_node}.input", base_val[0], base_val[1], base_val[2], type="double3")
+            
+            final_color_source = f"{cc_node}.outColor"
+
+        for attr in ['edgeColor', 'silhouetteColor']:
+            if cmds.attributeQuery(attr, node=toon_mat, exists=True):
+                if final_color_source:
+                    cmds.connectAttr(final_color_source, f"{toon_mat}.{attr}", force=True)
+                else:
+                    rgb = v['edge_rgb']
+                    conns = cmds.listConnections(f"{toon_mat}.{attr}", source=True, destination=False, plugs=True) or []
+                    if conns:
+                        cmds.disconnectAttr(conns[0], f"{toon_mat}.{attr}")
+                    cmds.setAttr(f"{toon_mat}.{attr}", rgb[0], rgb[1], rgb[2], type="double3")
+
+        # 鉛筆質感（ザラつき）
         if v['use_pencil']:
             op_noise = cmds.shadingNode('aiNoise', asTexture=True, name=f"{toon_mat}_inkOpacityNoise")
             cmds.setAttr(f"{op_noise}.octaves", 4)
@@ -192,28 +263,15 @@ class AiToonAllInOneWindow(object):
             for attr in ['edgeOpacity', 'silhouetteOpacity']:
                 if cmds.attributeQuery(attr, node=toon_mat, exists=True):
                     cmds.connectAttr(f"{op_range}.outColorR", f"{toon_mat}.{attr}", force=True)
-
-            col_noise = cmds.shadingNode('aiNoise', asTexture=True, name=f"{toon_mat}_inkColorNoise")
-            cmds.setAttr(f"{col_noise}.octaves", 3)
-            cmds.setAttr(f"{col_noise}.scale", v['grain_scale'] * 0.8, v['grain_scale'] * 0.8, v['grain_scale'] * 0.8, type="double3")
-            
-            r2 = min(1.0, edge_rgb[0] + v['color_jitter'])
-            g2 = min(1.0, edge_rgb[1] + v['color_jitter'])
-            b2 = min(1.0, edge_rgb[2] + v['color_jitter'])
-            cmds.setAttr(f"{col_noise}.color1", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
-            cmds.setAttr(f"{col_noise}.color2", r2, g2, b2, type="double3")
-
-            for attr in ['edgeColor', 'silhouetteColor']:
-                if cmds.attributeQuery(attr, node=toon_mat, exists=True):
-                    cmds.connectAttr(f"{col_noise}.outColor", f"{toon_mat}.{attr}", force=True)
         else:
-            for attr in ['edgeColor', 'silhouetteColor']:
-                if cmds.attributeQuery(attr, node=toon_mat, exists=True):
-                    cmds.setAttr(f"{toon_mat}.{attr}", edge_rgb[0], edge_rgb[1], edge_rgb[2], type="double3")
             for attr in ['edgeOpacity', 'silhouetteOpacity']:
                 if cmds.attributeQuery(attr, node=toon_mat, exists=True):
+                    conns = cmds.listConnections(f"{toon_mat}.{attr}", source=True, destination=False, plugs=True) or []
+                    if conns:
+                        cmds.disconnectAttr(conns[0], f"{toon_mat}.{attr}")
                     cmds.setAttr(f"{toon_mat}.{attr}", 1.0)
 
+        # トーンマップ（影）
         ramp_name = f"{toon_mat}_tonemapRamp"
         if cmds.objExists(ramp_name):
             cmds.setAttr(f"{ramp_name}.colorEntryList[0].color", v['shadow_val'], v['shadow_val'], v['shadow_val'], type="double3")
@@ -224,7 +282,6 @@ class AiToonAllInOneWindow(object):
             cmds.warning("Arnold (mtoa) プラグインがロードできません。")
             return
 
-        # 実行前の選択オブジェクトを記憶
         original_selection = cmds.ls(selection=True, long=True)
         if not original_selection:
             cmds.warning("対象のモデル（メッシュ）を選択してください。")
@@ -266,6 +323,7 @@ class AiToonAllInOneWindow(object):
                 if cmds.attributeQuery('aov_prefix', node=toon_mat, exists=True):
                     cmds.setAttr(f"{toon_mat}.aov_prefix", "", type="string")
 
+                # カラー・テクスチャ接続の引き継ぎ
                 for attr in ['baseColor', 'color', 'outColor', 'surfaceColor']:
                     if old_mat and cmds.attributeQuery(attr, node=old_mat, exists=True):
                         try:
@@ -280,6 +338,7 @@ class AiToonAllInOneWindow(object):
                             pass
                         break
 
+                # トーンマップ用ランプ作成
                 ramp = cmds.shadingNode('ramp', asTexture=True, name=f"{toon_mat}_tonemapRamp")
                 p2d = cmds.shadingNode('place2dTexture', asUtility=True, name=f"{ramp}_p2d")
                 cmds.connectAttr(f"{p2d}.outUV", f"{ramp}.uvCoord", force=True)
@@ -311,7 +370,6 @@ class AiToonAllInOneWindow(object):
 
                 converted_count += 1
 
-            # 元の選択状態を復元する（消えていないノードのみ）
             valid_sel = [obj for obj in original_selection if cmds.objExists(obj)]
             if valid_sel:
                 cmds.select(valid_sel, replace=True)

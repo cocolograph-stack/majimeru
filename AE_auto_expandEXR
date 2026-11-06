@@ -1,0 +1,78 @@
+(function() {
+    var proj = app.project;
+    if (!proj) {
+        alert("プロジェクトが開かれていません。");
+        return;
+    }
+
+    // 1. プロジェクトパネルで選択されているアイテムを厳密に取得
+    var targetFootage = null;
+    var selection = proj.selection;
+
+    if (selection && selection.length > 0) {
+        for (var i = 0; i < selection.length; i++) {
+            if (selection[i] instanceof FootageItem) {
+                targetFootage = selection[i];
+                break;
+            }
+        }
+    }
+
+    if (!targetFootage) {
+        alert("プロジェクトパネルでマルチEXRフッテージ（または連番）を直接選択してください。\n（タイムライン上のレイヤーではなく、左側の素材一覧です）");
+        return;
+    }
+
+    app.beginUndoGroup("Unpack EXR to Comp");
+
+    try {
+        // 2. パラメータのフォールバック（値が取得できない場合の安全策）
+        var w = targetFootage.width > 0 ? targetFootage.width : 1920;
+        var h = targetFootage.height > 0 ? targetFootage.height : 1080;
+        var par = targetFootage.pixelAspect > 0 ? targetFootage.pixelAspect : 1.0;
+        var dur = targetFootage.duration > 0 ? targetFootage.duration : 10.0;
+        var fps = targetFootage.frameRate > 0 ? targetFootage.frameRate : 24.0;
+        var compName = targetFootage.name.replace(/\.[^\.]+$/, "") + "_Comp";
+
+        // 3. app.project.items から正しく addComp を呼び出し
+        var comp = proj.items.addComp(compName, w, h, par, dur, fps);
+
+        // 4. 追加する主要AOVと描画モード
+        var aovChannels = [
+            { name: "beauty", mode: BlendingMode.NORMAL },
+            { name: "diffuse", mode: BlendingMode.NORMAL },
+            { name: "diffuse_direct", mode: BlendingMode.ADD },
+            { name: "diffuse_indirect", mode: BlendingMode.ADD },
+            { name: "specular", mode: BlendingMode.ADD },
+            { name: "specular_direct", mode: BlendingMode.ADD },
+            { name: "specular_indirect", mode: BlendingMode.ADD },
+            { name: "transmission", mode: BlendingMode.ADD },
+            { name: "sss", mode: BlendingMode.ADD },
+            { name: "coat", mode: BlendingMode.ADD },
+            { name: "emission", mode: BlendingMode.ADD },
+            { name: "ambient_occlusion", mode: BlendingMode.MULTIPLY },
+            { name: "Z", mode: BlendingMode.NORMAL }
+        ];
+
+        // 5. 各AOVレイヤーの生成
+        for (var j = aovChannels.length - 1; j >= 0; j--) {
+            var ch = aovChannels[j];
+            var layer = comp.layers.add(targetFootage);
+            layer.name = ch.name;
+            layer.blendingMode = ch.mode;
+
+            // Extractor (3Dチャンネル抽出) を適用
+            try {
+                layer.property("ADBE Effect Parade").addProperty("ADBE EXtractoR");
+            } catch (fxErr) {}
+        }
+
+        // 生成したコンポジションを表示
+        comp.openInViewer();
+
+    } catch (e) {
+        alert("処理中にエラーが発生しました:\n" + e.toString());
+    } finally {
+        app.endUndoGroup();
+    }
+})();

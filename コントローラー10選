@@ -1,0 +1,233 @@
+import maya.cmds as cmds
+
+WINDOW_ID = "RigControllerSpawnerWin"
+
+
+def create_ctrl_curve(shape_type, name="ctrl", radius=1.0):
+    """各種シェイプのコントローラーカーブとオフセットグループを作成"""
+    crv = None
+
+    if shape_type == "circle":
+        crv = cmds.circle(nr=(0, 1, 0), r=radius, ch=False)[0]
+
+    elif shape_type == "square":
+        r = radius
+        pts = [
+            (-r, 0, -r),
+            (r, 0, -r),
+            (r, 0, r),
+            (-r, 0, r),
+            (-r, 0, -r),
+        ]
+        crv = cmds.curve(d=1, p=pts, k=[0, 1, 2, 3, 4])
+
+    elif shape_type == "cube":
+        r = radius * 0.5
+        pts = [
+            (-r, r, r),
+            (r, r, r),
+            (r, -r, r),
+            (-r, -r, r),
+            (-r, r, r),
+            (-r, r, -r),
+            (r, r, -r),
+            (r, -r, -r),
+            (-r, -r, -r),
+            (-r, r, -r),
+            (-r, -r, -r),
+            (-r, -r, r),
+            (r, -r, r),
+            (r, -r, -r),
+            (r, r, -r),
+            (r, r, r),
+        ]
+        crv = cmds.curve(d=1, p=pts, k=list(range(len(pts))))
+
+    elif shape_type == "sphere":
+        c1 = cmds.circle(nr=(0, 1, 0), r=radius, ch=False)[0]
+        c2 = cmds.circle(nr=(1, 0, 0), r=radius, ch=False)[0]
+        c3 = cmds.circle(nr=(0, 0, 1), r=radius, ch=False)[0]
+        c2_shape = cmds.listRelatives(c2, shapes=True)[0]
+        c3_shape = cmds.listRelatives(c3, shapes=True)[0]
+        cmds.parent(c2_shape, c3_shape, c1, r=True, s=True)
+        cmds.delete(c2, c3)
+        crv = c1
+
+    elif shape_type == "single_arrow":
+        r = radius
+        pts = [
+            (0, 0, r * 1.5),
+            (r * 0.6, 0, r * 0.7),
+            (r * 0.25, 0, r * 0.7),
+            (r * 0.25, 0, -r),
+            (-r * 0.25, 0, -r),
+            (-r * 0.25, 0, r * 0.7),
+            (-r * 0.6, 0, r * 0.7),
+            (0, 0, r * 1.5),
+        ]
+        crv = cmds.curve(d=1, p=pts, k=list(range(len(pts))))
+
+    elif shape_type == "cross_arrow":
+        # 4方向十字矢印
+        pts = []
+        w, l, a = radius * 0.2, radius * 1.2, radius * 0.5
+        # 12頂点＋各矢印の角で構成
+        pts = [
+            (w, 0, w),
+            (w, 0, l - a),
+            (a, 0, l - a),
+            (0, 0, l),
+            (-a, 0, l - a),
+            (-w, 0, l - a),
+            (-w, 0, w),
+            (-(l - a), 0, w),
+            (-(l - a), 0, a),
+            (-l, 0, 0),
+            (-(l - a), 0, -a),
+            (-(l - a), 0, -w),
+            (-w, 0, -w),
+            (-w, 0, -(l - a)),
+            (-a, 0, -(l - a)),
+            (0, 0, -l),
+            (a, 0, -(l - a)),
+            (w, 0, -(l - a)),
+            (w, 0, -w),
+            (l - a, 0, -w),
+            (l - a, 0, -a),
+            (l, 0, 0),
+            (l - a, 0, a),
+            (l - a, 0, w),
+            (w, 0, w),
+        ]
+        crv = cmds.curve(d=1, p=pts, k=list(range(len(pts))))
+
+    elif shape_type == "gear":
+        import math
+
+        teeth = 8
+        pts = []
+        total_steps = teeth * 4
+        for i in range(total_steps + 1):
+            angle = (float(i) / total_steps) * 2.0 * math.pi
+            r = radius * (1.2 if (i % 4 in [1, 2]) else 0.85)
+            pts.append((math.sin(angle) * r, 0, math.cos(angle) * r))
+        crv = cmds.curve(d=1, p=pts, k=list(range(len(pts))))
+
+    elif shape_type == "diamond":
+        r = radius
+        pts = [
+            (0, r, 0),
+            (r, 0, 0),
+            (0, -r, 0),
+            (-r, 0, 0),
+            (0, r, 0),
+            (0, 0, r),
+            (r, 0, 0),
+            (0, 0, -r),
+            (-r, 0, 0),
+            (0, 0, r),
+            (0, -r, 0),
+            (0, 0, -r),
+            (0, r, 0),
+        ]
+        crv = cmds.curve(d=1, p=pts, k=list(range(len(pts))))
+
+    elif shape_type == "pin":
+        r = radius * 0.4
+        c = cmds.circle(nr=(0, 0, 1), r=r, ch=False)[0]
+        cmds.move(0, radius * 1.5, 0, c, r=True)
+        line = cmds.curve(d=1, p=[(0, 0, 0), (0, radius * 1.1, 0)], k=[0, 1])
+        c_shape = cmds.listRelatives(c, shapes=True)[0]
+        cmds.parent(c_shape, line, r=True, s=True)
+        cmds.delete(c)
+        crv = line
+
+    elif shape_type == "locator_cross":
+        r = radius
+        pts = [
+            (-r, 0, 0),
+            (r, 0, 0),
+            (0, 0, 0),
+            (0, r, 0),
+            (0, -r, 0),
+            (0, 0, 0),
+            (0, 0, -r),
+            (0, 0, r),
+        ]
+        crv = cmds.curve(d=1, p=pts, k=list(range(len(pts))))
+
+    # リネーム
+    ctrl_name = cmds.rename(crv, f"{name}_{shape_type}_ctrl")
+
+    # オフセットグループ作成（0トランスフォーム用）
+    grp = cmds.group(ctrl_name, name=f"{ctrl_name}_grp")
+
+    # 選択対象があればスナップ
+    sel = cmds.ls(sl=True)
+    if sel and sel[0] != grp:
+        cmds.delete(cmds.parentConstraint(sel[0], grp, mo=False))
+
+    cmds.select(ctrl_name)
+    return ctrl_name, grp
+
+
+def build_controller_ui():
+    """UIウィンドウの構築"""
+    if cmds.window(WINDOW_ID, exists=True):
+        cmds.deleteUI(WINDOW_ID)
+
+    win = cmds.window(WINDOW_ID, title="Rig Controller Spawner", w=260, h=360, s=False)
+    cmds.columnLayout(adj=True, rs=4, p=win)
+
+    cmds.separator(h=8, st="none")
+    cmds.text(l="  コントローラー設定", al="left", fn="boldLabelFont")
+    name_field = cmds.textFieldGrp(
+        l="Base Name:", tx="char", cw2=[70, 170], adj=2
+    )
+    scale_slider = cmds.floatSliderGrp(
+        l="Scale:", f=True, min=0.1, max=10.0, v=1.0, cw3=[50, 45, 140], adj=3
+    )
+
+    cmds.separator(h=10, st="in")
+    cmds.text(l="  シェイプ一覧（クリックで生成）", al="left", fn="boldLabelFont")
+    cmds.separator(h=4, st="none")
+
+    shapes = [
+        ("サークル (Circle)", "circle"),
+        ("スクエア (Square)", "square"),
+        ("キューブ (Cube)", "cube"),
+        ("スフィア (Sphere)", "sphere"),
+        ("単一矢印 (Single Arrow)", "single_arrow"),
+        ("十字矢印 (Cross Arrow)", "cross_arrow"),
+        ("ギア (Gear)", "gear"),
+        ("ダイヤ (Diamond)", "diamond"),
+        ("ピン (Pin)", "pin"),
+        ("十字ロケータ (Cross)", "locator_cross"),
+    ]
+
+    def on_click(shape_type):
+        name_val = cmds.textFieldGrp(name_field, q=True, tx=True) or "ctrl"
+        scale_val = cmds.floatSliderGrp(scale_slider, q=True, v=True)
+        create_ctrl_curve(shape_type, name=name_val, radius=scale_val)
+
+    # 2列グリッドで配置
+    cmds.gridLayout(nc=2, cwh=(126, 32))
+    for label, stype in shapes:
+        cmds.button(
+            l=label, c=lambda _, s=stype: on_click(s), bgc=[0.24, 0.28, 0.32]
+        )
+    cmds.setParent("..")
+
+    cmds.separator(h=8, st="in")
+    cmds.text(
+        l="※オブジェクト選択時はその位置・向きに生成",
+        al="center",
+        fn="obliqueLabelFont",
+    )
+    cmds.separator(h=6, st="none")
+
+    cmds.showWindow(win)
+
+
+# 実行
+build_controller_ui()

@@ -1,3 +1,20 @@
+# ============================================================
+# ##     ##    ###          ## #### ##     ## ######## ########  ##     ##
+# ###   ###   ## ##         ##  ##  ###   ### ##       ##     ## ##     ##
+# #### ####  ##   ##        ##  ##  #### #### ##       ##     ## ##     ##
+# ## ### ## ##     ##       ##  ##  ## ### ## ######   ########  ##     ##
+# ##     ## ######### ##    ##  ##  ##     ## ##       ##   ##   ##     ##
+# ##     ## ##     ## ##    ##  ##  ##     ## ##       ##    ##  ##     ##
+# ##     ## ##     ##  ######  #### ##     ## ######## ##     ##  #######
+#
+#  Tool    : V02_SKIN_weight_quick  v02
+#  Author  : majimeru + とびうおぴょんぴょん
+#  What    : Maya tool: skin weight quick editor
+#  YouTube : https://www.youtube.com/@3DCGいろいろ
+#  License : GPL-3.0 - free to use, modify and share.
+#            Keep this note when you share it.
+# ============================================================
+
 from maya import cmds
 import maya.OpenMayaUI as omui
 import traceback

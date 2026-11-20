@@ -1,3 +1,20 @@
+# ============================================================
+# ##     ##    ###          ## #### ##     ## ######## ########  ##     ##
+# ###   ###   ## ##         ##  ##  ###   ### ##       ##     ## ##     ##
+# #### ####  ##   ##        ##  ##  #### #### ##       ##     ## ##     ##
+# ## ### ## ##     ##       ##  ##  ## ### ## ######   ########  ##     ##
+# ##     ## ######### ##    ##  ##  ##     ## ##       ##   ##   ##     ##
+# ##     ## ##     ## ##    ##  ##  ##     ## ##       ##    ##  ##     ##
+# ##     ## ##     ##  ######  #### ##     ## ######## ##     ##  #######
+#
+#  Tool    : dup_along_path
+#  Author  : majimeru + とびうおぴょんぴょん
+#  What    : Maya tool: duplicate objects along a curve
+#  YouTube : https://www.youtube.com/@3DCGいろいろ
+#  License : GPL-3.0 - free to use, modify and share.
+#            Keep this note when you share it.
+# ============================================================
+
 # -*- coding: utf-8 -*-
 """
 Duplicate Along Path (Python版) - dup_along_path.py

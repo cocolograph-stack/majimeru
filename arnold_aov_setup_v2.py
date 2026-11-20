@@ -1,3 +1,20 @@
+# ============================================================
+# ##     ##    ###          ## #### ##     ## ######## ########  ##     ##
+# ###   ###   ## ##         ##  ##  ###   ### ##       ##     ## ##     ##
+# #### ####  ##   ##        ##  ##  #### #### ##       ##     ## ##     ##
+# ## ### ## ##     ##       ##  ##  ## ### ## ######   ########  ##     ##
+# ##     ## ######### ##    ##  ##  ##     ## ##       ##   ##   ##     ##
+# ##     ## ##     ## ##    ##  ##  ##     ## ##       ##    ##  ##     ##
+# ##     ## ##     ##  ######  #### ##     ## ######## ##     ##  #######
+#
+#  Tool    : arnold_aov_setup_v2  v2
+#  Author  : majimeru + とびうおぴょんぴょん
+#  What    : Maya tool: Arnold AOV setup for After Effects compositing
+#  YouTube : https://www.youtube.com/@3DCGいろいろ
+#  License : GPL-3.0 - free to use, modify and share.
+#            Keep this note when you share it.
+# ============================================================
+
 import maya.cmds as cmds
 import mtoa.aovs as aovs
 import mtoa.core as core

@@ -102,7 +102,7 @@ def get_maya_window():
 class BeginnerWeightEditor(MayaQWidgetDockableMixin, QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(BeginnerWeightEditor, self).__init__(parent)
-        self.setWindowTitle("やさしいウエイト調整")
+        self.setWindowTitle("やさしいウエイト調整 v9")
         # v6: ドッキング対応（Mayaの画面に組み込める）。「常に手前」は廃止した
         self.resize(820, 640)
         self.is_loading = False
@@ -127,7 +127,7 @@ class BeginnerWeightEditor(MayaQWidgetDockableMixin, QtWidgets.QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        title_label = QtWidgets.QLabel("やさしいウエイト調整")
+        title_label = QtWidgets.QLabel("やさしいウエイト調整 v9")
         title_label.setStyleSheet("font-size: 17px; font-weight: bold;")
         layout.addWidget(title_label)
 
